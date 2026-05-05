@@ -7,6 +7,7 @@ For the `engine` LXC to consume `/dev/dri`, the Proxmox host must bind the devic
 Current observed host blockers on HLH:
 
 - `/etc/modprobe.d/blacklist-amdgpu.conf` blacklists `amdgpu`
+- `/etc/modprobe.d/vfio.conf` pins the AMD iGPU PCI IDs to `vfio-pci`
 - `/etc/modules-load.d/vfio-pci.conf` force-loads VFIO modules
 - `lspci -nnk -s c5:00.0` shows `Kernel driver in use: vfio-pci`
 - `/dev/dri` is absent on the host

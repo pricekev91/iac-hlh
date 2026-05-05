@@ -73,7 +73,13 @@ EOF
 
   systemctl daemon-reload
   systemctl enable ollama
-  systemctl restart ollama
+}
+
+ensure_ollama_storage_permissions() {
+  id ollama >/dev/null 2>&1 || fail "ollama user is missing after install"
+
+  chown -R ollama:ollama /srv/ai/models /srv/ai/state /srv/ai/scratch
+  chmod 0755 /srv/ai/models /srv/ai/state /srv/ai/scratch
 }
 
 write_manager_service() {
@@ -218,6 +224,8 @@ main() {
   case "${AI_APPLIANCE_BACKEND}" in
     ollama)
       install_ollama
+      ensure_ollama_storage_permissions
+      systemctl restart ollama
       wait_for_ollama
       pull_default_model_if_requested
       ;;

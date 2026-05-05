@@ -29,6 +29,7 @@ main() {
   fi
 
   backup_and_remove /etc/modprobe.d/blacklist-amdgpu.conf
+  backup_and_remove /etc/modprobe.d/vfio.conf
   backup_and_remove /etc/modules-load.d/vfio-pci.conf
 
   cat >/etc/modules-load.d/amdgpu.conf <<'EOF'
