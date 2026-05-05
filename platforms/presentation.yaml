@@ -1,0 +1,11 @@
+presentation:
+  unprivileged: true
+  onboot: true
+  cores: 4
+  memory_mb: 8192
+  swap_mb: 2048
+  rootfs_size_gb: 32
+  tags: ai-presentation;shared;openwebui
+  features: nesting=1,keyctl=1
+  ui_port: 3000
+  webui_auth: false

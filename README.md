@@ -63,12 +63,13 @@ iac-hlh/
 
 ## Current Operator Workflow
 
-The first reconciled runtime is the shared `engine` LXC only.
+The current reconciled runtime is the shared `engine` LXC, plus a separate `presentation` LXC when the engine backend is `ollama`.
 
 - `./apply.bash --plan inventory/hlh-prod.yaml` validates the inventory and prints the Proxmox reconciliation plan.
 - `./apply.bash inventory/hlh-prod.yaml` reconciles the shared AI appliance LXC on HLH.
+- when the engine backend is `ollama`, the same apply run also reconciles a separate `presentation` LXC for Open WebUI.
 
-`trashpanda-app` remains a separate future LXC and is intentionally not folded into the engine runtime or this first apply slice.
+`trashpanda-app` remains a separate future LXC and is intentionally not folded into the engine runtime or this apply slice.
 
 ## Additional Contracts
 

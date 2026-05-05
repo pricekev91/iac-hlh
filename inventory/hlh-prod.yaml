@@ -18,6 +18,11 @@ engine:
   hostname: engine
   ipv4: dhcp
 
+presentation:
+  vmid: 103
+  hostname: presentation
+  ipv4: dhcp
+
 trashpanda_app:
   vmid: 102
   hostname: trashpanda-app

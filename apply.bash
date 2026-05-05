@@ -175,22 +175,33 @@ ensure_directory() {
     run_cmd mkdir -p "$path"
 }
 
-ensure_container_base() {
+container_ipv4() {
     local vmid="$1"
-    local hostname="$2"
-    local ostemplate="$3"
-    local storage="$4"
-    local rootfs_size_gb="$5"
-    local bridge="$6"
-    local ip_config="$7"
-    local gateway="$8"
-    local cores="$9"
-    local memory_mb="${10}"
-    local swap_mb="${11}"
-    local unprivileged="${12}"
-    local onboot="${13}"
-    local tags="${14}"
-    local features="${15}"
+
+    if [[ "$MODE" == "plan" ]]; then
+        return 0
+    fi
+
+    pct exec "$vmid" -- sh -c "hostname -I 2>/dev/null | awk '{print \$1}'" 2>/dev/null | tr -d '\r' | awk 'NF { print $1; exit }'
+}
+
+ensure_container_base() {
+    local role_label="$1"
+    local vmid="$2"
+    local hostname="$3"
+    local ostemplate="$4"
+    local storage="$5"
+    local rootfs_size_gb="$6"
+    local bridge="$7"
+    local ip_config="$8"
+    local gateway="$9"
+    local cores="${10}"
+    local memory_mb="${11}"
+    local swap_mb="${12}"
+    local unprivileged="${13}"
+    local onboot="${14}"
+    local tags="${15}"
+    local features="${16}"
     local net0
     local rootfs
 
@@ -201,7 +212,7 @@ ensure_container_base() {
     fi
 
     if ! container_exists "$vmid"; then
-        log "Creating engine LXC ${vmid} (${hostname})"
+        log "Creating ${role_label} LXC ${vmid} (${hostname})"
         run_cmd pct create "$vmid" "$ostemplate" \
             --hostname "$hostname" \
             --ostype debian \
@@ -217,7 +228,7 @@ ensure_container_base() {
         return 0
     fi
 
-    log "Reconciling engine LXC ${vmid} (${hostname})"
+    log "Reconciling ${role_label} LXC ${vmid} (${hostname})"
     run_cmd pct set "$vmid" \
         --hostname "$hostname" \
         --cores "$cores" \
@@ -297,6 +308,32 @@ provision_engine_runtime() {
         "$target_script"
 }
 
+provision_presentation_runtime() {
+    local vmid="$1"
+    local ui_port="$2"
+    local engine_base_url="$3"
+    local webui_auth="$4"
+    local target_script="/root/provision-openwebui.bash"
+    local provision_script="$SCRIPT_DIR/scripts/provision-openwebui.bash"
+
+    [[ -f "$provision_script" ]] || fail "Provisioning script not found: $provision_script"
+
+    if [[ "$MODE" == "plan" ]]; then
+        printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
+        printf '[plan] pct exec %q -- env AI_PRESENTATION_HOST=%q AI_PRESENTATION_PORT=%q AI_PRESENTATION_OLLAMA_BASE_URL=%q AI_PRESENTATION_WEBUI_AUTH=%q %q\n' \
+            "$vmid" "0.0.0.0" "$ui_port" "$engine_base_url" "$webui_auth" "$target_script"
+        return 0
+    fi
+
+    run_cmd pct push "$vmid" "$provision_script" "$target_script" --perms 0755
+    run_cmd pct exec "$vmid" -- env \
+        AI_PRESENTATION_HOST="0.0.0.0" \
+        AI_PRESENTATION_PORT="$ui_port" \
+        AI_PRESENTATION_OLLAMA_BASE_URL="$engine_base_url" \
+        AI_PRESENTATION_WEBUI_AUTH="$webui_auth" \
+        "$target_script"
+}
+
 main() {
     local inventory_path
     local platform_path="$SCRIPT_DIR/platforms/engine.yaml"
@@ -326,6 +363,22 @@ main() {
     local manager_port
     local default_model
     local pull_default_model
+    local presentation_platform_path="$SCRIPT_DIR/platforms/presentation.yaml"
+    local presentation_vmid
+    local presentation_hostname
+    local presentation_ip_config
+    local presentation_rootfs_size_gb
+    local presentation_cores
+    local presentation_memory_mb
+    local presentation_swap_mb
+    local presentation_unprivileged
+    local presentation_onboot
+    local presentation_tags
+    local presentation_features
+    local presentation_ui_port
+    local presentation_webui_auth
+    local presentation_engine_base_url
+    local engine_ipv4
 
     if [[ $# -lt 1 || $# -gt 2 ]]; then
         usage
@@ -344,6 +397,9 @@ main() {
     require_command pct
 
     load_yaml_into_config "$platform_path"
+    if [[ -f "$presentation_platform_path" ]]; then
+        load_yaml_into_config "$presentation_platform_path"
+    fi
     load_yaml_into_config "$inventory_path"
 
     vmid="$(config_get engine.vmid)"
@@ -372,6 +428,20 @@ main() {
     manager_port="$(config_get engine.manager_port 18080)"
     default_model="$(config_get engine.default_model qwen2.5-coder:7b)"
     pull_default_model="$(config_get engine.pull_default_model false)"
+    presentation_vmid="$(config_get presentation.vmid)"
+    presentation_hostname="$(config_get presentation.hostname presentation)"
+    presentation_ip_config="$(config_get presentation.ipv4 dhcp)"
+    presentation_rootfs_size_gb="$(config_get presentation.rootfs_size_gb 32)"
+    presentation_cores="$(config_get presentation.cores 4)"
+    presentation_memory_mb="$(config_get presentation.memory_mb 8192)"
+    presentation_swap_mb="$(config_get presentation.swap_mb 2048)"
+    presentation_unprivileged="$(bool_to_pct "$(config_get presentation.unprivileged true)")"
+    presentation_onboot="$(bool_to_pct "$(config_get presentation.onboot true)")"
+    presentation_tags="$(config_get presentation.tags 'ai-presentation;shared;openwebui')"
+    presentation_features="$(config_get presentation.features 'nesting=1,keyctl=1')"
+    presentation_ui_port="$(config_get presentation.ui_port 3000)"
+    presentation_webui_auth="$(config_get presentation.webui_auth false)"
+    presentation_engine_base_url="$(config_get presentation.engine_base_url)"
 
     [[ -n "$vmid" ]] || fail "engine.vmid must be set in inventory or platform definition"
     [[ -n "$ostemplate" ]] || fail "proxmox.ostemplate must be set in inventory"
@@ -381,7 +451,7 @@ main() {
     [[ -n "$scratch_source" ]] || fail "storage.scratch_host_path must be set in inventory"
 
     log "Reconciling shared AI appliance LXC on HLH"
-    ensure_container_base "$vmid" "$hostname" "$ostemplate" "$storage" "$rootfs_size_gb" "$bridge" "$ip_config" "$gateway" "$cores" "$memory_mb" "$swap_mb" "$unprivileged" "$onboot" "$tags" "$features"
+    ensure_container_base "engine" "$vmid" "$hostname" "$ostemplate" "$storage" "$rootfs_size_gb" "$bridge" "$ip_config" "$gateway" "$cores" "$memory_mb" "$swap_mb" "$unprivileged" "$onboot" "$tags" "$features"
     ensure_engine_mounts "$vmid" "$models_source" "$state_source" "$scratch_source"
     ensure_engine_gpu_devices "$vmid" "$enable_gpu" "$card0_path" "$render_path"
 
@@ -391,6 +461,30 @@ main() {
 
     provision_engine_runtime "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model"
     log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname"
+
+    if [[ "$backend" == "ollama" ]]; then
+        [[ -n "$presentation_vmid" ]] || fail "presentation.vmid must be set in inventory when engine.backend=ollama"
+
+        if [[ -z "$presentation_engine_base_url" ]]; then
+            if [[ "$MODE" == "plan" ]]; then
+                presentation_engine_base_url="http://<engine-ip>:${api_port}"
+            else
+                engine_ipv4="$(container_ipv4 "$vmid")"
+                [[ -n "$engine_ipv4" ]] || fail "Unable to determine engine container IPv4 address for presentation wiring"
+                presentation_engine_base_url="http://${engine_ipv4}:${api_port}"
+            fi
+        fi
+
+        log "Reconciling presentation LXC on HLH"
+        ensure_container_base "presentation" "$presentation_vmid" "$presentation_hostname" "$ostemplate" "$storage" "$presentation_rootfs_size_gb" "$bridge" "$presentation_ip_config" "$gateway" "$presentation_cores" "$presentation_memory_mb" "$presentation_swap_mb" "$presentation_unprivileged" "$presentation_onboot" "$presentation_tags" "$presentation_features"
+
+        if ! container_running "$presentation_vmid"; then
+            run_cmd pct start "$presentation_vmid"
+        fi
+
+        provision_presentation_runtime "$presentation_vmid" "$presentation_ui_port" "$presentation_engine_base_url" "$presentation_webui_auth"
+        log "Presentation LXC reconciliation complete: vmid=$presentation_vmid hostname=$presentation_hostname base_url=$presentation_engine_base_url"
+    fi
 }
 
 main "$@"

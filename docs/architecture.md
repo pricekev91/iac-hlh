@@ -45,9 +45,9 @@ Out of scope for this slice:
 
 - `trashpanda-app` LXC
 - application-specific Docker stacks
-- orchestrator, agents, and presentation LXCs
+- orchestrator and agents LXCs
 
-Those remain future runtime slices and should be modeled separately.
+The `presentation` LXC is the first adjacent runtime slice beyond the shared engine and is only reconciled when the engine backend is `ollama`.
 
 ## Appliance Contract
 
