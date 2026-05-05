@@ -54,7 +54,7 @@ EOF
 install_base_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y ca-certificates curl jq pciutils python3 python3-venv lsb-release
+  apt-get install -y ca-certificates curl jq pciutils python3 python3-venv lsb-release zstd
 }
 
 install_ollama() {
