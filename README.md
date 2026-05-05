@@ -4,6 +4,8 @@ Infrastructure-as-Code repository for HLH, the Home Lab Hardware host at `192.16
 
 This repository owns HLH host and runtime infrastructure only.
 
+`apply.bash` is the operator entrypoint for Proxmox reconciliation.
+
 ## Repository Boundary
 
 Included here:
@@ -44,3 +46,26 @@ The initial HLH target is intentionally small:
 4. clean separation between shared platform services and app-specific runtimes
 
 The detailed HLH host contract lives in `docs/hlh-host-contract.md`.
+
+## Repository Layout
+
+```text
+iac-hlh/
+├── bootstrap/
+├── docs/
+├── inventory/
+├── platforms/
+├── scripts/
+├── apply.bash
+├── README.md
+└── zfsbootstrap.sh
+```
+
+## Current Operator Workflow
+
+The first reconciled runtime is the shared `engine` LXC only.
+
+- `./apply.bash --plan inventory/hlh-prod.yaml` validates the inventory and prints the Proxmox reconciliation plan.
+- `./apply.bash inventory/hlh-prod.yaml` reconciles the shared AI appliance LXC on HLH.
+
+`trashpanda-app` remains a separate future LXC and is intentionally not folded into the engine runtime or this first apply slice.

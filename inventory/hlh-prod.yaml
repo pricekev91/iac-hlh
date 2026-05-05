@@ -1,0 +1,19 @@
+host:
+  name: hlh
+  address: 192.168.6.10
+
+proxmox:
+  node: hlh
+  bridge: vmbr0
+  rootfs_storage: local-zfs
+  ostemplate: local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst
+
+storage:
+  models_host_path: /srv/ai/models
+  state_host_path: /srv/ai/state
+  scratch_host_path: /srv/ai/scratch
+
+engine:
+  vmid: 201
+  hostname: engine
+  ipv4: dhcp
