@@ -17,3 +17,8 @@ engine:
   vmid: 101
   hostname: engine
   ipv4: dhcp
+
+trashpanda_app:
+  vmid: 102
+  hostname: trashpanda-app
+  ipv4: dhcp

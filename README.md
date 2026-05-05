@@ -69,3 +69,8 @@ The first reconciled runtime is the shared `engine` LXC only.
 - `./apply.bash inventory/hlh-prod.yaml` reconciles the shared AI appliance LXC on HLH.
 
 `trashpanda-app` remains a separate future LXC and is intentionally not folded into the engine runtime or this first apply slice.
+
+## Additional Contracts
+
+- `bootstrap/proxmox-enable-amd-igpu-host.bash` prepares the HLH Proxmox host to bind the AMD iGPU to `amdgpu` instead of `vfio-pci` so `/dev/dri` can be passed into the `engine` LXC after reboot.
+- `platforms/trashpanda-app.yaml` defines the future host-side LXC contract for `trashpanda-app` without pulling any TrashPanda application code into this repository.

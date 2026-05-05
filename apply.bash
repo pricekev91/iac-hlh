@@ -274,6 +274,7 @@ provision_engine_runtime() {
     local api_port="$3"
     local manager_port="$4"
     local default_model="$5"
+    local pull_default_model="$6"
     local target_script="/root/provision-ai-appliance.bash"
     local provision_script="$SCRIPT_DIR/scripts/provision-ai-appliance.bash"
 
@@ -281,8 +282,8 @@ provision_engine_runtime() {
 
     if [[ "$MODE" == "plan" ]]; then
         printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env AI_APPLIANCE_BACKEND=%q AI_APPLIANCE_API_PORT=%q AI_APPLIANCE_MANAGER_PORT=%q AI_APPLIANCE_DEFAULT_MODEL=%q %q\n' \
-            "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$target_script"
+        printf '[plan] pct exec %q -- env AI_APPLIANCE_BACKEND=%q AI_APPLIANCE_API_PORT=%q AI_APPLIANCE_MANAGER_PORT=%q AI_APPLIANCE_DEFAULT_MODEL=%q AI_APPLIANCE_PULL_DEFAULT_MODEL=%q %q\n' \
+            "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model" "$target_script"
         return 0
     fi
 
@@ -292,6 +293,7 @@ provision_engine_runtime() {
         AI_APPLIANCE_API_PORT="$api_port" \
         AI_APPLIANCE_MANAGER_PORT="$manager_port" \
         AI_APPLIANCE_DEFAULT_MODEL="$default_model" \
+        AI_APPLIANCE_PULL_DEFAULT_MODEL="$pull_default_model" \
         "$target_script"
 }
 
@@ -323,6 +325,7 @@ main() {
     local api_port
     local manager_port
     local default_model
+    local pull_default_model
 
     if [[ $# -lt 1 || $# -gt 2 ]]; then
         usage
@@ -368,6 +371,7 @@ main() {
     api_port="$(config_get engine.api_port 8080)"
     manager_port="$(config_get engine.manager_port 18080)"
     default_model="$(config_get engine.default_model qwen2.5-coder:7b)"
+    pull_default_model="$(config_get engine.pull_default_model false)"
 
     [[ -n "$vmid" ]] || fail "engine.vmid must be set in inventory or platform definition"
     [[ -n "$ostemplate" ]] || fail "proxmox.ostemplate must be set in inventory"
@@ -385,7 +389,7 @@ main() {
         run_cmd pct start "$vmid"
     fi
 
-    provision_engine_runtime "$vmid" "$backend" "$api_port" "$manager_port" "$default_model"
+    provision_engine_runtime "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model"
     log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname"
 }
 

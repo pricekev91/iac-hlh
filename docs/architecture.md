@@ -39,6 +39,7 @@ Current scope:
 - mounted host paths for models, state, and scratch data
 - optional `/dev/dri` passthrough for AMD iGPU-backed inference
 - in-container provisioning hook for the AI appliance baseline
+- host-side AMD iGPU rebinding workflow for HLH when Proxmox is still binding the device to `vfio-pci`
 
 Out of scope for this slice:
 
@@ -58,3 +59,5 @@ The shared appliance should continue presenting a stable local contract to consu
 - application-agnostic host mounts and runtime wiring
 
 This repo owns how the appliance runs on HLH. Consuming application repos own how they use it.
+
+The future `trashpanda-app` runtime contract is documented separately in `docs/trashpanda-app-contract.md` and `platforms/trashpanda-app.yaml` so the LXC boundary exists before that slice is implemented.

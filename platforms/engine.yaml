@@ -12,6 +12,7 @@ engine:
   manager_port: 18080
   backend: ollama
   default_model: qwen2.5-coder:7b
+  pull_default_model: false
 
   gpu:
     card0: /dev/dri/card0
