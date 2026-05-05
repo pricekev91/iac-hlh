@@ -66,6 +66,15 @@ export PORT="${AI_PRESENTATION_PORT:-3000}"
 export OLLAMA_BASE_URL="${AI_PRESENTATION_OLLAMA_BASE_URL:-http://127.0.0.1:8080}"
 export WEBUI_AUTH="${AI_PRESENTATION_WEBUI_AUTH:-False}"
 
+if [[ $# -eq 0 ]]; then
+  exec /opt/openwebui/venv/bin/open-webui serve --host "$HOST" --port "$PORT"
+fi
+
+if [[ "$1" == "serve" ]]; then
+  shift
+  exec /opt/openwebui/venv/bin/open-webui serve --host "$HOST" --port "$PORT" "$@"
+fi
+
 exec /opt/openwebui/venv/bin/open-webui "$@"
 EOF
 
