@@ -3,10 +3,10 @@ host:
   address: 192.168.6.10
 
 proxmox:
-  node: hlh
+  node: prox01
   bridge: vmbr0
   rootfs_storage: local-zfs
-  ostemplate: local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst
+  ostemplate: local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst
 
 storage:
   models_host_path: /srv/ai/models
