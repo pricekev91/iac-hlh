@@ -63,12 +63,14 @@ install_ollama() {
     curl -fsSL https://ollama.com/install.sh | sh
   fi
 
+  install -d -m 0755 /srv/ai/state/ollama-home
+
   install -d -m 0755 /etc/systemd/system/ollama.service.d
   cat >/etc/systemd/system/ollama.service.d/override.conf <<EOF
 [Service]
 Environment="OLLAMA_HOST=0.0.0.0:${AI_APPLIANCE_API_PORT}"
 Environment="OLLAMA_MODELS=/srv/ai/models"
-Environment="HOME=/root"
+Environment="HOME=/srv/ai/state/ollama-home"
 EOF
 
   systemctl daemon-reload
@@ -78,6 +80,7 @@ EOF
 ensure_ollama_storage_permissions() {
   id ollama >/dev/null 2>&1 || fail "ollama user is missing after install"
 
+  install -d -m 0755 /srv/ai/state/ollama-home
   chown -R ollama:ollama /srv/ai/models /srv/ai/state /srv/ai/scratch
   chmod 0755 /srv/ai/models /srv/ai/state /srv/ai/scratch
 }
