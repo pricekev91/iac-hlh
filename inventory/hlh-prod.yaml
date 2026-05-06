@@ -27,4 +27,4 @@ presentation:
 trashpanda_app:
   vmid: 102
   hostname: trashpanda-app
-  ipv4: dhcp
+  ipv4: 192.168.6.248/22

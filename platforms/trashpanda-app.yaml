@@ -1,11 +1,12 @@
 trashpanda_app:
   unprivileged: true
   onboot: true
+  startup: order=40,up=15
   cores: 8
   memory_mb: 16384
   swap_mb: 2048
   rootfs_size_gb: 64
-  tags: app;trashpanda;future
+  tags: app;trashpanda
   features: nesting=1,keyctl=1
   docker_root_host_path: /srv/trashpanda/docker
   data_host_path: /srv/trashpanda/data

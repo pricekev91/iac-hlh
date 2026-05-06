@@ -175,6 +175,17 @@ ensure_directory() {
     run_cmd mkdir -p "$path"
 }
 
+ensure_unprivileged_bind_ownership() {
+    local path="$1"
+    local unprivileged="$2"
+
+    if [[ "$unprivileged" != "1" ]]; then
+        return 0
+    fi
+
+    run_cmd chown 100000:100000 "$path"
+}
+
 container_ipv4() {
     local vmid="$1"
 
@@ -183,6 +194,32 @@ container_ipv4() {
     fi
 
     pct exec "$vmid" -- sh -c "hostname -I 2>/dev/null | awk '{print \$1}'" 2>/dev/null | tr -d '\r' | awk 'NF { print $1; exit }'
+}
+
+pct_config_value() {
+    local vmid="$1"
+    local key="$2"
+
+    if [[ "$MODE" == "plan" ]]; then
+        return 0
+    fi
+
+    pct config "$vmid" 2>/dev/null | awk -F': ' -v key="$key" '$1 == key { print $2; exit }'
+}
+
+net0_matches_desired() {
+    local current="$1"
+    local desired="$2"
+    local part
+
+    [[ -n "$current" ]] || return 1
+
+    IFS=',' read -r -a desired_parts <<< "$desired"
+    for part in "${desired_parts[@]}"; do
+        [[ "$current" == *"$part"* ]] || return 1
+    done
+
+    return 0
 }
 
 ensure_container_base() {
@@ -205,6 +242,7 @@ ensure_container_base() {
     local startup="${17}"
     local net0
     local rootfs
+    local current_net0
 
     rootfs="${storage}:${rootfs_size_gb}"
     net0="name=eth0,bridge=${bridge},ip=${ip_config}"
@@ -238,10 +276,14 @@ ensure_container_base() {
         --cores "$cores" \
         --memory "$memory_mb" \
         --swap "$swap_mb" \
-        --net0 "$net0" \
         --onboot "$onboot" \
         --tags "$tags" \
         --features "$features"
+
+    current_net0="$(pct_config_value "$vmid" net0)"
+    if ! net0_matches_desired "$current_net0" "$net0"; then
+        run_cmd pct set "$vmid" --net0 "$net0"
+    fi
 
     if [[ -n "$startup" ]]; then
         run_cmd pct set "$vmid" --startup "$startup"
@@ -261,6 +303,21 @@ ensure_engine_mounts() {
     run_cmd pct set "$vmid" --mp0 "${models_source},mp=/srv/ai/models"
     run_cmd pct set "$vmid" --mp1 "${state_source},mp=/srv/ai/state"
     run_cmd pct set "$vmid" --mp2 "${scratch_source},mp=/srv/ai/scratch"
+}
+
+ensure_trashpanda_mounts() {
+    local vmid="$1"
+    local docker_root_source="$2"
+    local data_source="$3"
+    local unprivileged="$4"
+
+    ensure_directory "$docker_root_source"
+    ensure_directory "$data_source"
+    ensure_unprivileged_bind_ownership "$docker_root_source" "$unprivileged"
+    ensure_unprivileged_bind_ownership "$data_source" "$unprivileged"
+
+    run_cmd pct set "$vmid" --mp0 "${docker_root_source},mp=/var/lib/docker"
+    run_cmd pct set "$vmid" --mp1 "${data_source},mp=/srv/trashpanda/data"
 }
 
 ensure_engine_gpu_devices() {
@@ -352,6 +409,27 @@ provision_presentation_runtime() {
         "$target_script"
 }
 
+provision_trashpanda_runtime() {
+    local vmid="$1"
+    local docker_data_root="$2"
+    local target_script="/root/provision-trashpanda-host.bash"
+    local provision_script="$SCRIPT_DIR/scripts/provision-trashpanda-host.bash"
+
+    [[ -f "$provision_script" ]] || fail "Provisioning script not found: $provision_script"
+
+    if [[ "$MODE" == "plan" ]]; then
+        printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
+        printf '[plan] pct exec %q -- env TRASHPANDA_DOCKER_DATA_ROOT=%q %q\n' \
+            "$vmid" "$docker_data_root" "$target_script"
+        return 0
+    fi
+
+    run_cmd pct push "$vmid" "$provision_script" "$target_script" --perms 0755
+    run_cmd pct exec "$vmid" -- env \
+        TRASHPANDA_DOCKER_DATA_ROOT="$docker_data_root" \
+        "$target_script"
+}
+
 main() {
     local inventory_path
     local platform_path="$SCRIPT_DIR/platforms/engine.yaml"
@@ -386,6 +464,7 @@ main() {
     local verbose_system_prompt
     local verbose_num_predict
     local presentation_platform_path="$SCRIPT_DIR/platforms/presentation.yaml"
+    local trashpanda_platform_path="$SCRIPT_DIR/platforms/trashpanda-app.yaml"
     local presentation_vmid
     local presentation_hostname
     local presentation_ip_config
@@ -403,6 +482,20 @@ main() {
     local presentation_engine_base_url
     local presentation_default_models
     local presentation_default_model_params
+    local trashpanda_vmid
+    local trashpanda_hostname
+    local trashpanda_ip_config
+    local trashpanda_rootfs_size_gb
+    local trashpanda_cores
+    local trashpanda_memory_mb
+    local trashpanda_swap_mb
+    local trashpanda_unprivileged
+    local trashpanda_onboot
+    local trashpanda_startup
+    local trashpanda_tags
+    local trashpanda_features
+    local trashpanda_docker_root_host_path
+    local trashpanda_data_host_path
     local engine_ipv4
 
     if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -424,6 +517,9 @@ main() {
     load_yaml_into_config "$platform_path"
     if [[ -f "$presentation_platform_path" ]]; then
         load_yaml_into_config "$presentation_platform_path"
+    fi
+    if [[ -f "$trashpanda_platform_path" ]]; then
+        load_yaml_into_config "$trashpanda_platform_path"
     fi
     load_yaml_into_config "$inventory_path"
 
@@ -474,6 +570,20 @@ main() {
     presentation_engine_base_url="$(config_get presentation.engine_base_url)"
     presentation_default_models="$(config_get presentation.default_models "$default_model")"
     presentation_default_model_params="$(config_get presentation.default_model_params '{"stream_response":true}')"
+    trashpanda_vmid="$(config_get trashpanda_app.vmid)"
+    trashpanda_hostname="$(config_get trashpanda_app.hostname trashpanda-app)"
+    trashpanda_ip_config="$(config_get trashpanda_app.ipv4 dhcp)"
+    trashpanda_rootfs_size_gb="$(config_get trashpanda_app.rootfs_size_gb 64)"
+    trashpanda_cores="$(config_get trashpanda_app.cores 8)"
+    trashpanda_memory_mb="$(config_get trashpanda_app.memory_mb 16384)"
+    trashpanda_swap_mb="$(config_get trashpanda_app.swap_mb 2048)"
+    trashpanda_unprivileged="$(bool_to_pct "$(config_get trashpanda_app.unprivileged true)")"
+    trashpanda_onboot="$(bool_to_pct "$(config_get trashpanda_app.onboot true)")"
+    trashpanda_startup="$(config_get trashpanda_app.startup 'order=40,up=15')"
+    trashpanda_tags="$(config_get trashpanda_app.tags 'app;trashpanda')"
+    trashpanda_features="$(config_get trashpanda_app.features 'nesting=1,keyctl=1')"
+    trashpanda_docker_root_host_path="$(config_get trashpanda_app.docker_root_host_path)"
+    trashpanda_data_host_path="$(config_get trashpanda_app.data_host_path)"
 
     [[ -n "$vmid" ]] || fail "engine.vmid must be set in inventory or platform definition"
     [[ -n "$ostemplate" ]] || fail "proxmox.ostemplate must be set in inventory"
@@ -516,6 +626,22 @@ main() {
 
         provision_presentation_runtime "$presentation_vmid" "$presentation_ui_port" "$presentation_engine_base_url" "$presentation_webui_auth" "$presentation_default_models" "$presentation_default_model_params"
         log "Presentation LXC reconciliation complete: vmid=$presentation_vmid hostname=$presentation_hostname base_url=$presentation_engine_base_url"
+    fi
+
+    if [[ -n "$trashpanda_vmid" ]]; then
+        [[ -n "$trashpanda_docker_root_host_path" ]] || fail "trashpanda_app.docker_root_host_path must be set when trashpanda_app.vmid is configured"
+        [[ -n "$trashpanda_data_host_path" ]] || fail "trashpanda_app.data_host_path must be set when trashpanda_app.vmid is configured"
+
+        log "Reconciling TrashPanda app LXC on HLH"
+        ensure_container_base "trashpanda-app" "$trashpanda_vmid" "$trashpanda_hostname" "$ostemplate" "$storage" "$trashpanda_rootfs_size_gb" "$bridge" "$trashpanda_ip_config" "$gateway" "$trashpanda_cores" "$trashpanda_memory_mb" "$trashpanda_swap_mb" "$trashpanda_unprivileged" "$trashpanda_onboot" "$trashpanda_tags" "$trashpanda_features" "$trashpanda_startup"
+        ensure_trashpanda_mounts "$trashpanda_vmid" "$trashpanda_docker_root_host_path" "$trashpanda_data_host_path" "$trashpanda_unprivileged"
+
+        if ! container_running "$trashpanda_vmid"; then
+            run_cmd pct start "$trashpanda_vmid"
+        fi
+
+        provision_trashpanda_runtime "$trashpanda_vmid" "/var/lib/docker"
+        log "TrashPanda app LXC reconciliation complete: vmid=$trashpanda_vmid hostname=$trashpanda_hostname"
     fi
 }
 
