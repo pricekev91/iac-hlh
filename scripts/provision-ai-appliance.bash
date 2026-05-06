@@ -18,6 +18,10 @@ require_root() {
   fi
 }
 
+ollama_cli() {
+  OLLAMA_HOST="http://127.0.0.1:${AI_APPLIANCE_API_PORT}" ollama "$@"
+}
+
 write_runtime_contract() {
   install -d -m 0755 /etc/ai-appliance /srv/ai/models /srv/ai/state /srv/ai/scratch /opt/ai-appliance/bin /opt/ai-appliance/lib
 
@@ -27,6 +31,9 @@ AI_APPLIANCE_API_PORT=${AI_APPLIANCE_API_PORT}
 AI_APPLIANCE_MANAGER_PORT=${AI_APPLIANCE_MANAGER_PORT}
 AI_APPLIANCE_DEFAULT_MODEL=${AI_APPLIANCE_DEFAULT_MODEL}
 AI_APPLIANCE_PULL_DEFAULT_MODEL=${AI_APPLIANCE_PULL_DEFAULT_MODEL}
+AI_APPLIANCE_VERBOSE_MODEL_ALIAS=${AI_APPLIANCE_VERBOSE_MODEL_ALIAS}
+AI_APPLIANCE_VERBOSE_SYSTEM_PROMPT=${AI_APPLIANCE_VERBOSE_SYSTEM_PROMPT}
+AI_APPLIANCE_VERBOSE_NUM_PREDICT=${AI_APPLIANCE_VERBOSE_NUM_PREDICT}
 EOF
 
   cat >/usr/local/bin/ai-appliance-status <<'EOF'
@@ -42,6 +49,7 @@ backend=${AI_APPLIANCE_BACKEND:-unknown}
 api_port=${AI_APPLIANCE_API_PORT:-unknown}
 manager_port=${AI_APPLIANCE_MANAGER_PORT:-unknown}
 default_model=${AI_APPLIANCE_DEFAULT_MODEL:-unknown}
+verbose_model_alias=${AI_APPLIANCE_VERBOSE_MODEL_ALIAS:-unknown}
 models_dir=/srv/ai/models
 state_dir=/srv/ai/state
 scratch_dir=/srv/ai/scratch
@@ -205,8 +213,39 @@ pull_default_model_if_requested() {
   fi
 
   log "Ensuring default model is available: ${AI_APPLIANCE_DEFAULT_MODEL}"
-  ollama list 2>/dev/null | awk 'NR>1 { print $1 }' | grep -Fx "${AI_APPLIANCE_DEFAULT_MODEL}" >/dev/null 2>&1 || \
-    ollama pull "${AI_APPLIANCE_DEFAULT_MODEL}"
+  ollama_cli list 2>/dev/null | awk 'NR>1 { print $1 }' | grep -Fx "${AI_APPLIANCE_DEFAULT_MODEL}" >/dev/null 2>&1 || \
+    ollama_cli pull "${AI_APPLIANCE_DEFAULT_MODEL}"
+}
+
+ensure_verbose_model_profile() {
+  local modelfile
+
+  if [[ -z "${AI_APPLIANCE_VERBOSE_MODEL_ALIAS}" ]]; then
+    log "Skipping verbose model alias"
+    return 0
+  fi
+
+  if [[ "${AI_APPLIANCE_VERBOSE_MODEL_ALIAS}" == "${AI_APPLIANCE_DEFAULT_MODEL}" ]]; then
+    fail "AI_APPLIANCE_VERBOSE_MODEL_ALIAS must differ from AI_APPLIANCE_DEFAULT_MODEL"
+  fi
+
+  if ! ollama_cli list 2>/dev/null | awk 'NR>1 { print $1 }' | grep -Fx "${AI_APPLIANCE_DEFAULT_MODEL}" >/dev/null 2>&1; then
+    log "Base model missing; pulling ${AI_APPLIANCE_DEFAULT_MODEL} to build verbose alias"
+    ollama_cli pull "${AI_APPLIANCE_DEFAULT_MODEL}"
+  fi
+
+  modelfile="$(mktemp)"
+  cat >"${modelfile}" <<EOF
+FROM ${AI_APPLIANCE_DEFAULT_MODEL}
+PARAMETER num_predict ${AI_APPLIANCE_VERBOSE_NUM_PREDICT}
+SYSTEM """
+${AI_APPLIANCE_VERBOSE_SYSTEM_PROMPT}
+"""
+EOF
+
+  log "Creating verbose model alias: ${AI_APPLIANCE_VERBOSE_MODEL_ALIAS}"
+  ollama_cli create "${AI_APPLIANCE_VERBOSE_MODEL_ALIAS}" -f "${modelfile}"
+  rm -f "${modelfile}"
 }
 
 main() {
@@ -217,6 +256,9 @@ main() {
   : "${AI_APPLIANCE_MANAGER_PORT:=18080}"
   : "${AI_APPLIANCE_DEFAULT_MODEL:=qwen2.5-coder:7b}"
   : "${AI_APPLIANCE_PULL_DEFAULT_MODEL:=false}"
+  : "${AI_APPLIANCE_VERBOSE_MODEL_ALIAS:=}"
+  : "${AI_APPLIANCE_VERBOSE_SYSTEM_PROMPT:=Provide thorough, information-dense answers. State assumptions, explain tradeoffs, and include concrete next steps when helpful.}"
+  : "${AI_APPLIANCE_VERBOSE_NUM_PREDICT:=4096}"
 
   log "Installing baseline packages"
   install_base_packages
@@ -231,6 +273,7 @@ main() {
       systemctl restart ollama
       wait_for_ollama
       pull_default_model_if_requested
+      ensure_verbose_model_profile
       ;;
     *)
       fail "Unsupported AI_APPLIANCE_BACKEND: ${AI_APPLIANCE_BACKEND}"

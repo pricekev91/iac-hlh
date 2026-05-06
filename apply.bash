@@ -202,6 +202,7 @@ ensure_container_base() {
     local onboot="${14}"
     local tags="${15}"
     local features="${16}"
+    local startup="${17}"
     local net0
     local rootfs
 
@@ -225,6 +226,9 @@ ensure_container_base() {
             --onboot "$onboot" \
             --tags "$tags" \
             --features "$features"
+        if [[ -n "$startup" ]]; then
+            run_cmd pct set "$vmid" --startup "$startup"
+        fi
         return 0
     fi
 
@@ -238,6 +242,10 @@ ensure_container_base() {
         --onboot "$onboot" \
         --tags "$tags" \
         --features "$features"
+
+    if [[ -n "$startup" ]]; then
+        run_cmd pct set "$vmid" --startup "$startup"
+    fi
 }
 
 ensure_engine_mounts() {
@@ -286,6 +294,9 @@ provision_engine_runtime() {
     local manager_port="$4"
     local default_model="$5"
     local pull_default_model="$6"
+    local verbose_model_alias="$7"
+    local verbose_system_prompt="$8"
+    local verbose_num_predict="$9"
     local target_script="/root/provision-ai-appliance.bash"
     local provision_script="$SCRIPT_DIR/scripts/provision-ai-appliance.bash"
 
@@ -293,8 +304,8 @@ provision_engine_runtime() {
 
     if [[ "$MODE" == "plan" ]]; then
         printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env AI_APPLIANCE_BACKEND=%q AI_APPLIANCE_API_PORT=%q AI_APPLIANCE_MANAGER_PORT=%q AI_APPLIANCE_DEFAULT_MODEL=%q AI_APPLIANCE_PULL_DEFAULT_MODEL=%q %q\n' \
-            "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model" "$target_script"
+        printf '[plan] pct exec %q -- env AI_APPLIANCE_BACKEND=%q AI_APPLIANCE_API_PORT=%q AI_APPLIANCE_MANAGER_PORT=%q AI_APPLIANCE_DEFAULT_MODEL=%q AI_APPLIANCE_PULL_DEFAULT_MODEL=%q AI_APPLIANCE_VERBOSE_MODEL_ALIAS=%q AI_APPLIANCE_VERBOSE_SYSTEM_PROMPT=%q AI_APPLIANCE_VERBOSE_NUM_PREDICT=%q %q\n' \
+            "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model" "$verbose_model_alias" "$verbose_system_prompt" "$verbose_num_predict" "$target_script"
         return 0
     fi
 
@@ -305,6 +316,9 @@ provision_engine_runtime() {
         AI_APPLIANCE_MANAGER_PORT="$manager_port" \
         AI_APPLIANCE_DEFAULT_MODEL="$default_model" \
         AI_APPLIANCE_PULL_DEFAULT_MODEL="$pull_default_model" \
+        AI_APPLIANCE_VERBOSE_MODEL_ALIAS="$verbose_model_alias" \
+        AI_APPLIANCE_VERBOSE_SYSTEM_PROMPT="$verbose_system_prompt" \
+        AI_APPLIANCE_VERBOSE_NUM_PREDICT="$verbose_num_predict" \
         "$target_script"
 }
 
@@ -313,6 +327,8 @@ provision_presentation_runtime() {
     local ui_port="$2"
     local engine_base_url="$3"
     local webui_auth="$4"
+    local default_models="$5"
+    local default_model_params="$6"
     local target_script="/root/provision-openwebui.bash"
     local provision_script="$SCRIPT_DIR/scripts/provision-openwebui.bash"
 
@@ -320,8 +336,8 @@ provision_presentation_runtime() {
 
     if [[ "$MODE" == "plan" ]]; then
         printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env AI_PRESENTATION_HOST=%q AI_PRESENTATION_PORT=%q AI_PRESENTATION_OLLAMA_BASE_URL=%q AI_PRESENTATION_WEBUI_AUTH=%q %q\n' \
-            "$vmid" "0.0.0.0" "$ui_port" "$engine_base_url" "$webui_auth" "$target_script"
+        printf '[plan] pct exec %q -- env AI_PRESENTATION_HOST=%q AI_PRESENTATION_PORT=%q AI_PRESENTATION_OLLAMA_BASE_URL=%q AI_PRESENTATION_WEBUI_AUTH=%q AI_PRESENTATION_DEFAULT_MODELS=%q AI_PRESENTATION_DEFAULT_MODEL_PARAMS=%q %q\n' \
+            "$vmid" "0.0.0.0" "$ui_port" "$engine_base_url" "$webui_auth" "$default_models" "$default_model_params" "$target_script"
         return 0
     fi
 
@@ -331,6 +347,8 @@ provision_presentation_runtime() {
         AI_PRESENTATION_PORT="$ui_port" \
         AI_PRESENTATION_OLLAMA_BASE_URL="$engine_base_url" \
         AI_PRESENTATION_WEBUI_AUTH="$webui_auth" \
+        AI_PRESENTATION_DEFAULT_MODELS="$default_models" \
+        AI_PRESENTATION_DEFAULT_MODEL_PARAMS="$default_model_params" \
         "$target_script"
 }
 
@@ -350,6 +368,7 @@ main() {
     local swap_mb
     local unprivileged
     local onboot
+    local startup
     local tags
     local features
     local models_source
@@ -363,6 +382,9 @@ main() {
     local manager_port
     local default_model
     local pull_default_model
+    local verbose_model_alias
+    local verbose_system_prompt
+    local verbose_num_predict
     local presentation_platform_path="$SCRIPT_DIR/platforms/presentation.yaml"
     local presentation_vmid
     local presentation_hostname
@@ -373,11 +395,14 @@ main() {
     local presentation_swap_mb
     local presentation_unprivileged
     local presentation_onboot
+    local presentation_startup
     local presentation_tags
     local presentation_features
     local presentation_ui_port
     local presentation_webui_auth
     local presentation_engine_base_url
+    local presentation_default_models
+    local presentation_default_model_params
     local engine_ipv4
 
     if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -415,6 +440,7 @@ main() {
     swap_mb="$(config_get engine.swap_mb 4096)"
     unprivileged="$(bool_to_pct "$(config_get engine.unprivileged false)")"
     onboot="$(bool_to_pct "$(config_get engine.onboot true)")"
+    startup="$(config_get engine.startup 'order=20,up=15')"
     tags="$(config_get engine.tags 'ai-appliance;shared;engine')"
     features="$(config_get engine.features 'nesting=1,keyctl=1')"
     models_source="$(config_get storage.models_host_path)"
@@ -428,6 +454,9 @@ main() {
     manager_port="$(config_get engine.manager_port 18080)"
     default_model="$(config_get engine.default_model qwen2.5-coder:7b)"
     pull_default_model="$(config_get engine.pull_default_model false)"
+    verbose_model_alias="$(config_get engine.verbose_model_alias)"
+    verbose_system_prompt="$(config_get engine.verbose_system_prompt 'Provide thorough, information-dense answers. State assumptions, explain tradeoffs, and include concrete next steps when helpful.')"
+    verbose_num_predict="$(config_get engine.verbose_num_predict 4096)"
     presentation_vmid="$(config_get presentation.vmid)"
     presentation_hostname="$(config_get presentation.hostname presentation)"
     presentation_ip_config="$(config_get presentation.ipv4 dhcp)"
@@ -437,11 +466,14 @@ main() {
     presentation_swap_mb="$(config_get presentation.swap_mb 2048)"
     presentation_unprivileged="$(bool_to_pct "$(config_get presentation.unprivileged true)")"
     presentation_onboot="$(bool_to_pct "$(config_get presentation.onboot true)")"
+    presentation_startup="$(config_get presentation.startup 'order=30,up=15')"
     presentation_tags="$(config_get presentation.tags 'ai-presentation;shared;openwebui')"
     presentation_features="$(config_get presentation.features 'nesting=1,keyctl=1')"
     presentation_ui_port="$(config_get presentation.ui_port 3000)"
     presentation_webui_auth="$(config_get presentation.webui_auth false)"
     presentation_engine_base_url="$(config_get presentation.engine_base_url)"
+    presentation_default_models="$(config_get presentation.default_models "$default_model")"
+    presentation_default_model_params="$(config_get presentation.default_model_params '{"stream_response":true}')"
 
     [[ -n "$vmid" ]] || fail "engine.vmid must be set in inventory or platform definition"
     [[ -n "$ostemplate" ]] || fail "proxmox.ostemplate must be set in inventory"
@@ -451,7 +483,7 @@ main() {
     [[ -n "$scratch_source" ]] || fail "storage.scratch_host_path must be set in inventory"
 
     log "Reconciling shared AI appliance LXC on HLH"
-    ensure_container_base "engine" "$vmid" "$hostname" "$ostemplate" "$storage" "$rootfs_size_gb" "$bridge" "$ip_config" "$gateway" "$cores" "$memory_mb" "$swap_mb" "$unprivileged" "$onboot" "$tags" "$features"
+    ensure_container_base "engine" "$vmid" "$hostname" "$ostemplate" "$storage" "$rootfs_size_gb" "$bridge" "$ip_config" "$gateway" "$cores" "$memory_mb" "$swap_mb" "$unprivileged" "$onboot" "$tags" "$features" "$startup"
     ensure_engine_mounts "$vmid" "$models_source" "$state_source" "$scratch_source"
     ensure_engine_gpu_devices "$vmid" "$enable_gpu" "$card0_path" "$render_path"
 
@@ -459,7 +491,7 @@ main() {
         run_cmd pct start "$vmid"
     fi
 
-    provision_engine_runtime "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model"
+    provision_engine_runtime "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model" "$verbose_model_alias" "$verbose_system_prompt" "$verbose_num_predict"
     log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname"
 
     if [[ "$backend" == "ollama" ]]; then
@@ -476,13 +508,13 @@ main() {
         fi
 
         log "Reconciling presentation LXC on HLH"
-        ensure_container_base "presentation" "$presentation_vmid" "$presentation_hostname" "$ostemplate" "$storage" "$presentation_rootfs_size_gb" "$bridge" "$presentation_ip_config" "$gateway" "$presentation_cores" "$presentation_memory_mb" "$presentation_swap_mb" "$presentation_unprivileged" "$presentation_onboot" "$presentation_tags" "$presentation_features"
+        ensure_container_base "presentation" "$presentation_vmid" "$presentation_hostname" "$ostemplate" "$storage" "$presentation_rootfs_size_gb" "$bridge" "$presentation_ip_config" "$gateway" "$presentation_cores" "$presentation_memory_mb" "$presentation_swap_mb" "$presentation_unprivileged" "$presentation_onboot" "$presentation_tags" "$presentation_features" "$presentation_startup"
 
         if ! container_running "$presentation_vmid"; then
             run_cmd pct start "$presentation_vmid"
         fi
 
-        provision_presentation_runtime "$presentation_vmid" "$presentation_ui_port" "$presentation_engine_base_url" "$presentation_webui_auth"
+        provision_presentation_runtime "$presentation_vmid" "$presentation_ui_port" "$presentation_engine_base_url" "$presentation_webui_auth" "$presentation_default_models" "$presentation_default_model_params"
         log "Presentation LXC reconciliation complete: vmid=$presentation_vmid hostname=$presentation_hostname base_url=$presentation_engine_base_url"
     fi
 }

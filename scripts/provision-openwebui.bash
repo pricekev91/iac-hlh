@@ -45,6 +45,12 @@ script_sha256() {
 }
 
 write_runtime_contract() {
+  local default_model_params="${AI_PRESENTATION_DEFAULT_MODEL_PARAMS}"
+
+  if [[ ${#default_model_params} -ge 2 && "${default_model_params:0:1}" == "'" && "${default_model_params: -1}" == "'" ]]; then
+    default_model_params="${default_model_params:1:${#default_model_params}-2}"
+  fi
+
   install -d -m 0755 /etc/ai-presentation /opt/openwebui /var/lib/open-webui
 
   cat >/etc/ai-presentation/runtime.env <<EOF
@@ -52,6 +58,8 @@ AI_PRESENTATION_HOST=${AI_PRESENTATION_HOST}
 AI_PRESENTATION_PORT=${AI_PRESENTATION_PORT}
 AI_PRESENTATION_OLLAMA_BASE_URL=${AI_PRESENTATION_OLLAMA_BASE_URL}
 AI_PRESENTATION_WEBUI_AUTH=${AI_PRESENTATION_WEBUI_AUTH}
+AI_PRESENTATION_DEFAULT_MODELS=${AI_PRESENTATION_DEFAULT_MODELS}
+AI_PRESENTATION_DEFAULT_MODEL_PARAMS=${default_model_params}
 EOF
 }
 
@@ -61,17 +69,39 @@ install_wrapper() {
 
 set -euo pipefail
 
+default_model_params="${AI_PRESENTATION_DEFAULT_MODEL_PARAMS:-}"
+if [[ -z "$default_model_params" ]]; then
+  default_model_params='{}'
+fi
+
 export HOST="${AI_PRESENTATION_HOST:-0.0.0.0}"
 export PORT="${AI_PRESENTATION_PORT:-3000}"
 export OLLAMA_BASE_URL="${AI_PRESENTATION_OLLAMA_BASE_URL:-http://127.0.0.1:8080}"
 export WEBUI_AUTH="${AI_PRESENTATION_WEBUI_AUTH:-False}"
+export DEFAULT_MODELS="${AI_PRESENTATION_DEFAULT_MODELS:-}"
+export DEFAULT_MODEL_PARAMS="$default_model_params"
+
+wait_for_engine() {
+  local attempt
+
+  for attempt in $(seq 1 30); do
+    if curl -fsS "${OLLAMA_BASE_URL}/api/version" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
 
 if [[ $# -eq 0 ]]; then
+  wait_for_engine
   exec /opt/openwebui/venv/bin/open-webui serve --host "$HOST" --port "$PORT"
 fi
 
 if [[ "$1" == "serve" ]]; then
   shift
+  wait_for_engine
   exec /opt/openwebui/venv/bin/open-webui serve --host "$HOST" --port "$PORT" "$@"
 fi
 
@@ -123,6 +153,16 @@ install_openwebui() {
   printf '%s\n' "$current_script_sha" >"$install_stamp_path"
 }
 
+frontend_root() {
+  /opt/openwebui/venv/bin/python - <<'EOF'
+from pathlib import Path
+import inspect
+import open_webui
+
+print(Path(inspect.getfile(open_webui)).resolve().parent / "frontend")
+EOF
+}
+
 write_service() {
   cat >/etc/systemd/system/ai-presentation.service <<'EOF'
 [Unit]
@@ -167,6 +207,8 @@ main() {
   : "${AI_PRESENTATION_PORT:=3000}"
   : "${AI_PRESENTATION_OLLAMA_BASE_URL:=http://127.0.0.1:8080}"
   : "${AI_PRESENTATION_WEBUI_AUTH:=False}"
+  : "${AI_PRESENTATION_DEFAULT_MODELS:=}"
+  : "${AI_PRESENTATION_DEFAULT_MODEL_PARAMS:={\"stream_response\":true}}"
 
   log "Writing presentation runtime contract"
   write_runtime_contract

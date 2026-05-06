@@ -5,6 +5,7 @@ host:
 proxmox:
   node: prox01
   bridge: vmbr0
+  gateway: 192.168.4.1
   rootfs_storage: local-zfs
   ostemplate: local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst
 
@@ -16,12 +17,12 @@ storage:
 engine:
   vmid: 101
   hostname: engine
-  ipv4: dhcp
+  ipv4: 192.168.6.252/22
 
 presentation:
   vmid: 103
   hostname: presentation
-  ipv4: dhcp
+  ipv4: 192.168.6.247/22
 
 trashpanda_app:
   vmid: 102

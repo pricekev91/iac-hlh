@@ -1,6 +1,7 @@
 engine:
   unprivileged: false
   onboot: true
+  startup: order=20,up=15
   cores: 12
   memory_mb: 49152
   swap_mb: 4096
@@ -13,6 +14,9 @@ engine:
   backend: ollama
   default_model: qwen2.5-coder:7b
   pull_default_model: false
+  verbose_model_alias: qwen2.5-coder-verbose:latest
+  verbose_num_predict: 4096
+  verbose_system_prompt: Provide thorough, information-dense answers. State assumptions, explain tradeoffs, and include concrete next steps when helpful.
 
   gpu:
     card0: /dev/dri/card0
