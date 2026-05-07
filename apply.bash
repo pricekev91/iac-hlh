@@ -320,6 +320,21 @@ ensure_trashpanda_mounts() {
     run_cmd pct set "$vmid" --mp1 "${data_source},mp=/srv/trashpanda/data"
 }
 
+set_container_root_password_if_configured() {
+    local vmid="$1"
+    local password="$2"
+
+    [[ -n "$password" ]] || return 0
+
+    if [[ "$MODE" == "plan" ]]; then
+        printf '[plan] pct exec %q -- sh -lc %q
+' "$vmid" "printf '%s\\n' 'root:${password}' | chpasswd"
+        return 0
+    fi
+
+    run_cmd pct exec "$vmid" -- sh -lc "printf '%s\n' 'root:${password}' | chpasswd"
+}
+
 ensure_engine_gpu_devices() {
     local vmid="$1"
     local enable_gpu="$2"
@@ -496,6 +511,7 @@ main() {
     local trashpanda_features
     local trashpanda_docker_root_host_path
     local trashpanda_data_host_path
+    local trashpanda_root_password
     local engine_ipv4
 
     if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -584,6 +600,7 @@ main() {
     trashpanda_features="$(config_get trashpanda_app.features 'nesting=1,keyctl=1')"
     trashpanda_docker_root_host_path="$(config_get trashpanda_app.docker_root_host_path)"
     trashpanda_data_host_path="$(config_get trashpanda_app.data_host_path)"
+    trashpanda_root_password="${TRASHPANDA_APP_ROOT_PASSWORD:-}"
 
     [[ -n "$vmid" ]] || fail "engine.vmid must be set in inventory or platform definition"
     [[ -n "$ostemplate" ]] || fail "proxmox.ostemplate must be set in inventory"
@@ -640,6 +657,7 @@ main() {
             run_cmd pct start "$trashpanda_vmid"
         fi
 
+        set_container_root_password_if_configured "$trashpanda_vmid" "$trashpanda_root_password"
         provision_trashpanda_runtime "$trashpanda_vmid" "/var/lib/docker"
         log "TrashPanda app LXC reconciliation complete: vmid=$trashpanda_vmid hostname=$trashpanda_hostname"
     fi
