@@ -292,7 +292,7 @@ verify_endpoints() {
   done
 
   for attempt in $(seq 1 40); do
-    if curl -fsS "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/v1/models" >/dev/null 2>&1; then
+    if curl -fsS "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/readyz" >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
