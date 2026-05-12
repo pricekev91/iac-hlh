@@ -66,7 +66,7 @@ The current reconciled runtime is one shared `engine` LXC.
 
 Inside `engine`, apply provisions:
 
-- `llama.cpp` server on port `8082` (inference engine)
+- `llama.cpp` server on port `8082` bound to localhost only (internal inference engine)
 - `LocalAI` API on port `8081` (model lifecycle + API middleware)
 - `llama.cpp Web UI` on port `8080` (frontend)
 

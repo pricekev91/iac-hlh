@@ -39,6 +39,7 @@ Current scope:
 - mounted host paths for models, state, and scratch data
 - optional `/dev/dri` passthrough for AMD iGPU-backed inference
 - in-container provisioning for one local AI stack: `llama.cpp` server, `LocalAI`, and `llama.cpp Web UI`
+- `llama.cpp` server listens on localhost only and is proxied through the Web UI layer
 - host-side AMD iGPU rebinding workflow for HLH when Proxmox is still binding the device to `vfio-pci`
 
 Out of scope for this slice:
@@ -52,7 +53,7 @@ The shared appliance should continue presenting a stable local contract to consu
 
 - `llama.cpp Web UI` on port `8080`
 - `LocalAI` API on port `8081`
-- `llama.cpp` server on port `8082`
+- `llama.cpp` server on port `8082` internally only
 - application-agnostic host mounts and runtime wiring
 
 This repo owns how the appliance runs on HLH. Consuming application repos own how they use it.

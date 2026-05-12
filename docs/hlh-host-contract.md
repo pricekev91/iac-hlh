@@ -41,7 +41,7 @@ Current implication:
 The first HLH layout is:
 
 - one privileged `engine` LXC for the shared AI appliance
-- with three in-container services: `llama.cpp` server, `LocalAI`, and `llama.cpp Web UI`
+- with three in-container services: `llama.cpp` server bound to localhost, `LocalAI`, and `llama.cpp Web UI`
 - room for future unprivileged LXCs for `orchestrator` and `agents` if they need to split out later
 
 The host repo should optimize for isolated runtime placement and repeatable recreation of these containers.
