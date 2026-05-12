@@ -98,72 +98,51 @@ install_llama_cpp_server() {
   fail "Unable to find built llama.cpp server binary"
 }
 
-write_web_ui() {
-  cat >/opt/ai-engine/web/index.html <<'EOF'
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>llama.cpp Web UI</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { font-family: "IBM Plex Sans", sans-serif; margin: 0; background: radial-gradient(circle at 20% 20%, #244, #0b1016 45%, #05070a 100%); color: #e8edf2; }
-    .wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
-    h1 { margin: 0 0 10px; font-size: 1.8rem; }
-    p { opacity: 0.85; }
-    textarea { width: 100%; min-height: 120px; border-radius: 12px; border: 1px solid #3c5068; padding: 12px; background: #111a24; color: #e8edf2; }
-    button { margin-top: 12px; background: #4eb5ff; color: #04111f; border: 0; border-radius: 10px; font-weight: 700; padding: 10px 14px; cursor: pointer; }
-    pre { white-space: pre-wrap; background: #0b141d; border: 1px solid #2b3f54; border-radius: 12px; padding: 12px; min-height: 120px; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>llama.cpp Web UI</h1>
-    <p>Frontend on port 8080 calling LocalAI middleware on port 8081.</p>
-    <textarea id="prompt" placeholder="Enter a prompt..."></textarea>
-    <button id="run">Generate</button>
-    <pre id="out"></pre>
-  </div>
-  <script>
-    const promptEl = document.getElementById("prompt");
-    const outEl = document.getElementById("out");
-    document.getElementById("run").addEventListener("click", async () => {
-      const prompt = promptEl.value.trim();
-      if (!prompt) return;
-      outEl.textContent = "Running...";
-      try {
-        const res = await fetch("/api/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "local-model", messages: [{ role: "user", content: prompt }], stream: false })
-        });
-        const payload = await res.json();
-        outEl.textContent = payload?.choices?.[0]?.message?.content ?? JSON.stringify(payload, null, 2);
-      } catch (err) {
-        outEl.textContent = String(err);
-      }
-    });
-  </script>
-</body>
-</html>
-EOF
-}
-
 write_nginx_config() {
   cat >/etc/nginx/sites-available/ai-engine-webui.conf <<'EOF'
 server {
   listen ${AI_ENGINE_WEBUI_PORT};
   server_name _;
 
-  root /opt/ai-engine/web;
-  index index.html;
-
+  # Serve the official llama.cpp Svelte WebUI from llama-server.
   location / {
-    try_files $uri $uri/ /index.html;
+    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   }
 
-  location /api/ {
+  # Endpoints used by llama.cpp WebUI.
+  location /v1/ {
+    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/v1/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+
+  location /props {
+    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/props;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+
+  location /slots {
+    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/slots;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+
+  location /models {
+    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/models;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+
+  # Optional LocalAI passthrough for model management APIs.
+  location /localai/ {
     proxy_pass http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
@@ -172,7 +151,7 @@ server {
 }
 EOF
 
-  envsubst '${AI_ENGINE_WEBUI_PORT} ${AI_ENGINE_LOCALAI_PORT}' < /etc/nginx/sites-available/ai-engine-webui.conf > /etc/nginx/sites-available/ai-engine-webui.resolved.conf
+  envsubst '${AI_ENGINE_WEBUI_PORT} ${AI_ENGINE_LOCALAI_PORT} ${AI_ENGINE_LLAMA_SERVER_PORT}' < /etc/nginx/sites-available/ai-engine-webui.conf > /etc/nginx/sites-available/ai-engine-webui.resolved.conf
   mv /etc/nginx/sites-available/ai-engine-webui.resolved.conf /etc/nginx/sites-available/ai-engine-webui.conf
   ln -sf /etc/nginx/sites-available/ai-engine-webui.conf /etc/nginx/sites-enabled/ai-engine-webui.conf
   rm -f /etc/nginx/sites-enabled/default
@@ -347,7 +326,6 @@ main() {
   install_llama_cpp_server
 
   log "Writing web UI and service definitions"
-  write_web_ui
   write_nginx_config
   write_llama_server_wrapper
   write_services
