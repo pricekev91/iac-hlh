@@ -41,9 +41,8 @@ HLH is the primary long-running host.
 The initial HLH target is intentionally small:
 
 1. a shared AI engine LXC for local inference
-2. a dedicated TrashPanda application LXC
-3. storage and network contracts required by those two runtimes
-4. clean separation between shared platform services and app-specific runtimes
+2. storage and network contracts required by that runtime
+3. clean separation between shared platform services and application repositories
 
 The detailed HLH host contract lives in `docs/hlh-host-contract.md`.
 
@@ -63,15 +62,19 @@ iac-hlh/
 
 ## Current Operator Workflow
 
-The current reconciled runtime is the shared `engine` LXC, plus a separate `presentation` LXC when the engine backend is `ollama`.
+The current reconciled runtime is one shared `engine` LXC.
+
+Inside `engine`, apply provisions:
+
+- `llama.cpp` server on port `8082` (inference engine)
+- `LocalAI` API on port `8081` (model lifecycle + API middleware)
+- `llama.cpp Web UI` on port `8080` (frontend)
 
 - `./apply.bash --plan inventory/hlh-prod.yaml` validates the inventory and prints the Proxmox reconciliation plan.
 - `./apply.bash inventory/hlh-prod.yaml` reconciles the shared AI appliance LXC on HLH.
-- when the engine backend is `ollama`, the same apply run also reconciles a separate `presentation` LXC for Open WebUI.
 
-`trashpanda-app` remains a separate future LXC and is intentionally not folded into the engine runtime or this apply slice.
+Legacy engine containers from pre-llama-stack runs are blocked with a clear recreate-required error. Recreate once, then normal reconciliation continues.
 
 ## Additional Contracts
 
 - `bootstrap/proxmox-enable-amd-igpu-host.bash` prepares the HLH Proxmox host to bind the AMD iGPU to `amdgpu` instead of `vfio-pci` so `/dev/dri` can be passed into the `engine` LXC after reboot.
-- `platforms/trashpanda-app.yaml` defines the future host-side LXC contract for `trashpanda-app` without pulling any TrashPanda application code into this repository.

@@ -4,7 +4,7 @@
 
 `iac-hlh` manages HLH host infrastructure for `192.168.6.10`.
 
-The first reconciled runtime is a shared AI appliance LXC named `engine`. That appliance is shared infrastructure and must remain independent of any single application repository.
+The first reconciled runtime is a shared AI engine LXC named `engine`. That appliance is shared infrastructure and must remain independent of any single application repository.
 
 ## Apply Layout
 
@@ -38,26 +38,21 @@ Current scope:
 - bridged network attachment
 - mounted host paths for models, state, and scratch data
 - optional `/dev/dri` passthrough for AMD iGPU-backed inference
-- in-container provisioning hook for the AI appliance baseline
+- in-container provisioning for one local AI stack: `llama.cpp` server, `LocalAI`, and `llama.cpp Web UI`
 - host-side AMD iGPU rebinding workflow for HLH when Proxmox is still binding the device to `vfio-pci`
 
 Out of scope for this slice:
 
-- `trashpanda-app` LXC
 - application-specific Docker stacks
 - orchestrator and agents LXCs
-
-The `presentation` LXC is the first adjacent runtime slice beyond the shared engine and is only reconciled when the engine backend is `ollama`.
 
 ## Appliance Contract
 
 The shared appliance should continue presenting a stable local contract to consuming applications:
 
-- API port `8080`
-- manager port `18080`
-- OpenAI-compatible application surface
+- `llama.cpp Web UI` on port `8080`
+- `LocalAI` API on port `8081`
+- `llama.cpp` server on port `8082`
 - application-agnostic host mounts and runtime wiring
 
 This repo owns how the appliance runs on HLH. Consuming application repos own how they use it.
-
-The future `trashpanda-app` runtime contract is documented separately in `docs/trashpanda-app-contract.md` and `platforms/trashpanda-app.yaml` so the LXC boundary exists before that slice is implemented.

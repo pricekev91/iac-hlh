@@ -18,13 +18,3 @@ engine:
   vmid: 101
   hostname: engine
   ipv4: 192.168.6.252/22
-
-presentation:
-  vmid: 103
-  hostname: presentation
-  ipv4: 192.168.6.247/22
-
-trashpanda_app:
-  vmid: 102
-  hostname: trashpanda-app
-  ipv4: 192.168.6.248/22

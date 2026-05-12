@@ -41,8 +41,8 @@ Current implication:
 The first HLH layout is:
 
 - one privileged `engine` LXC for the shared AI appliance
-- one unprivileged `trashpanda-app` LXC for TrashPanda application runtime
-- room for future unprivileged LXCs for `orchestrator`, `agents`, and `presentation` if they need to split out later
+- with three in-container services: `llama.cpp` server, `LocalAI`, and `llama.cpp Web UI`
+- room for future unprivileged LXCs for `orchestrator` and `agents` if they need to split out later
 
 The host repo should optimize for isolated runtime placement and repeatable recreation of these containers.
 
@@ -69,12 +69,12 @@ Storage decisions in this repo must remain application-agnostic where possible. 
 
 Application repos may declare required endpoints, but HLH decides how those endpoints are wired on the host.
 
-## 7. Deployment Contract With TrashPanda
+## 7. Deployment Contract With Consumers
 
-For the first deployment phase:
+For current deployment phases:
 
-- `TrashPanda` supplies the app container stack and its runtime requirements
-- `iac-hlh` supplies the LXC, mounts, network, and shared AI appliance reachability
+- consumer repos supply their own application stacks and runtime requirements
+- `iac-hlh` supplies the shared AI engine LXC, mounts, and network reachability
 - secrets are stored outside git and injected by host-managed runtime wiring
 
-This keeps app implementation and host infrastructure separately evolvable.
+This keeps application implementation and host infrastructure separately evolvable.

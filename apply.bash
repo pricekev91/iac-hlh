@@ -71,6 +71,7 @@ load_yaml_into_config() {
     local depth
     local key
     local value
+
     local path
     local leading_whitespace
     local parent0=""
@@ -186,23 +187,9 @@ ensure_unprivileged_bind_ownership() {
     run_cmd chown 100000:100000 "$path"
 }
 
-container_ipv4() {
-    local vmid="$1"
-
-    if [[ "$MODE" == "plan" ]]; then
-        return 0
-    fi
-
-    pct exec "$vmid" -- sh -c "hostname -I 2>/dev/null | awk '{print \$1}'" 2>/dev/null | tr -d '\r' | awk 'NF { print $1; exit }'
-}
-
 pct_config_value() {
     local vmid="$1"
     local key="$2"
-
-    if [[ "$MODE" == "plan" ]]; then
-        return 0
-    fi
 
     pct config "$vmid" 2>/dev/null | awk -F': ' -v key="$key" '$1 == key { print $2; exit }'
 }
@@ -305,36 +292,6 @@ ensure_engine_mounts() {
     run_cmd pct set "$vmid" --mp2 "${scratch_source},mp=/srv/ai/scratch"
 }
 
-ensure_trashpanda_mounts() {
-    local vmid="$1"
-    local docker_root_source="$2"
-    local data_source="$3"
-    local unprivileged="$4"
-
-    ensure_directory "$docker_root_source"
-    ensure_directory "$data_source"
-    ensure_unprivileged_bind_ownership "$docker_root_source" "$unprivileged"
-    ensure_unprivileged_bind_ownership "$data_source" "$unprivileged"
-
-    run_cmd pct set "$vmid" --mp0 "${docker_root_source},mp=/var/lib/docker"
-    run_cmd pct set "$vmid" --mp1 "${data_source},mp=/srv/trashpanda/data"
-}
-
-set_container_root_password_if_configured() {
-    local vmid="$1"
-    local password="$2"
-
-    [[ -n "$password" ]] || return 0
-
-    if [[ "$MODE" == "plan" ]]; then
-        printf '[plan] pct exec %q -- sh -lc %q
-' "$vmid" "printf '%s\\n' 'root:${password}' | chpasswd"
-        return 0
-    fi
-
-    run_cmd pct exec "$vmid" -- sh -lc "printf '%s\n' 'root:${password}' | chpasswd"
-}
-
 ensure_engine_gpu_devices() {
     local vmid="$1"
     local enable_gpu="$2"
@@ -361,14 +318,14 @@ ensure_engine_gpu_devices() {
 
 provision_engine_runtime() {
     local vmid="$1"
-    local backend="$2"
-    local api_port="$3"
-    local manager_port="$4"
+    local webui_port="$2"
+    local localai_port="$3"
+    local llama_server_port="$4"
     local default_model="$5"
     local pull_default_model="$6"
-    local verbose_model_alias="$7"
-    local verbose_system_prompt="$8"
-    local verbose_num_predict="$9"
+    local llama_context_size="$7"
+    local llama_gpu_layers="$8"
+    local llama_threads="$9"
     local target_script="/root/provision-ai-appliance.bash"
     local provision_script="$SCRIPT_DIR/scripts/provision-ai-appliance.bash"
 
@@ -376,73 +333,40 @@ provision_engine_runtime() {
 
     if [[ "$MODE" == "plan" ]]; then
         printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env AI_APPLIANCE_BACKEND=%q AI_APPLIANCE_API_PORT=%q AI_APPLIANCE_MANAGER_PORT=%q AI_APPLIANCE_DEFAULT_MODEL=%q AI_APPLIANCE_PULL_DEFAULT_MODEL=%q AI_APPLIANCE_VERBOSE_MODEL_ALIAS=%q AI_APPLIANCE_VERBOSE_SYSTEM_PROMPT=%q AI_APPLIANCE_VERBOSE_NUM_PREDICT=%q %q\n' \
-            "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model" "$verbose_model_alias" "$verbose_system_prompt" "$verbose_num_predict" "$target_script"
+        printf '[plan] pct exec %q -- env AI_ENGINE_WEBUI_PORT=%q AI_ENGINE_LOCALAI_PORT=%q AI_ENGINE_LLAMA_SERVER_PORT=%q AI_ENGINE_DEFAULT_MODEL=%q AI_ENGINE_PULL_DEFAULT_MODEL=%q AI_ENGINE_LLAMA_CONTEXT_SIZE=%q AI_ENGINE_LLAMA_GPU_LAYERS=%q AI_ENGINE_LLAMA_THREADS=%q %q\n' \
+            "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$target_script"
         return 0
     fi
 
     run_cmd pct push "$vmid" "$provision_script" "$target_script" --perms 0755
     run_cmd pct exec "$vmid" -- env \
-        AI_APPLIANCE_BACKEND="$backend" \
-        AI_APPLIANCE_API_PORT="$api_port" \
-        AI_APPLIANCE_MANAGER_PORT="$manager_port" \
-        AI_APPLIANCE_DEFAULT_MODEL="$default_model" \
-        AI_APPLIANCE_PULL_DEFAULT_MODEL="$pull_default_model" \
-        AI_APPLIANCE_VERBOSE_MODEL_ALIAS="$verbose_model_alias" \
-        AI_APPLIANCE_VERBOSE_SYSTEM_PROMPT="$verbose_system_prompt" \
-        AI_APPLIANCE_VERBOSE_NUM_PREDICT="$verbose_num_predict" \
+        AI_ENGINE_WEBUI_PORT="$webui_port" \
+        AI_ENGINE_LOCALAI_PORT="$localai_port" \
+        AI_ENGINE_LLAMA_SERVER_PORT="$llama_server_port" \
+        AI_ENGINE_DEFAULT_MODEL="$default_model" \
+        AI_ENGINE_PULL_DEFAULT_MODEL="$pull_default_model" \
+        AI_ENGINE_LLAMA_CONTEXT_SIZE="$llama_context_size" \
+        AI_ENGINE_LLAMA_GPU_LAYERS="$llama_gpu_layers" \
+        AI_ENGINE_LLAMA_THREADS="$llama_threads" \
         "$target_script"
 }
 
-provision_presentation_runtime() {
+ensure_engine_recreated_for_llama_stack() {
     local vmid="$1"
-    local ui_port="$2"
-    local engine_base_url="$3"
-    local webui_auth="$4"
-    local default_models="$5"
-    local default_model_params="$6"
-    local target_script="/root/provision-openwebui.bash"
-    local provision_script="$SCRIPT_DIR/scripts/provision-openwebui.bash"
+    local required_tag="$2"
+    local inventory_path="$3"
+    local current_tags
 
-    [[ -f "$provision_script" ]] || fail "Provisioning script not found: $provision_script"
-
-    if [[ "$MODE" == "plan" ]]; then
-        printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env AI_PRESENTATION_HOST=%q AI_PRESENTATION_PORT=%q AI_PRESENTATION_OLLAMA_BASE_URL=%q AI_PRESENTATION_WEBUI_AUTH=%q AI_PRESENTATION_DEFAULT_MODELS=%q AI_PRESENTATION_DEFAULT_MODEL_PARAMS=%q %q\n' \
-            "$vmid" "0.0.0.0" "$ui_port" "$engine_base_url" "$webui_auth" "$default_models" "$default_model_params" "$target_script"
+    if ! container_exists "$vmid"; then
         return 0
     fi
 
-    run_cmd pct push "$vmid" "$provision_script" "$target_script" --perms 0755
-    run_cmd pct exec "$vmid" -- env \
-        AI_PRESENTATION_HOST="0.0.0.0" \
-        AI_PRESENTATION_PORT="$ui_port" \
-        AI_PRESENTATION_OLLAMA_BASE_URL="$engine_base_url" \
-        AI_PRESENTATION_WEBUI_AUTH="$webui_auth" \
-        AI_PRESENTATION_DEFAULT_MODELS="$default_models" \
-        AI_PRESENTATION_DEFAULT_MODEL_PARAMS="$default_model_params" \
-        "$target_script"
-}
-
-provision_trashpanda_runtime() {
-    local vmid="$1"
-    local docker_data_root="$2"
-    local target_script="/root/provision-trashpanda-host.bash"
-    local provision_script="$SCRIPT_DIR/scripts/provision-trashpanda-host.bash"
-
-    [[ -f "$provision_script" ]] || fail "Provisioning script not found: $provision_script"
-
-    if [[ "$MODE" == "plan" ]]; then
-        printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env TRASHPANDA_DOCKER_DATA_ROOT=%q %q\n' \
-            "$vmid" "$docker_data_root" "$target_script"
+    current_tags="$(pct_config_value "$vmid" tags)"
+    if [[ "$current_tags" == *"${required_tag}"* ]]; then
         return 0
     fi
 
-    run_cmd pct push "$vmid" "$provision_script" "$target_script" --perms 0755
-    run_cmd pct exec "$vmid" -- env \
-        TRASHPANDA_DOCKER_DATA_ROOT="$docker_data_root" \
-        "$target_script"
+    fail "Engine LXC ${vmid} is from the legacy stack and must be recreated once before continuing. Run: pct stop ${vmid} || true ; pct destroy ${vmid} --purge 1 ; ./apply.bash ${inventory_path}"
 }
 
 main() {
@@ -470,49 +394,14 @@ main() {
     local enable_gpu
     local card0_path
     local render_path
-    local backend
-    local api_port
-    local manager_port
+    local webui_port
+    local localai_port
+    local llama_server_port
     local default_model
     local pull_default_model
-    local verbose_model_alias
-    local verbose_system_prompt
-    local verbose_num_predict
-    local presentation_platform_path="$SCRIPT_DIR/platforms/presentation.yaml"
-    local trashpanda_platform_path="$SCRIPT_DIR/platforms/trashpanda-app.yaml"
-    local presentation_vmid
-    local presentation_hostname
-    local presentation_ip_config
-    local presentation_rootfs_size_gb
-    local presentation_cores
-    local presentation_memory_mb
-    local presentation_swap_mb
-    local presentation_unprivileged
-    local presentation_onboot
-    local presentation_startup
-    local presentation_tags
-    local presentation_features
-    local presentation_ui_port
-    local presentation_webui_auth
-    local presentation_engine_base_url
-    local presentation_default_models
-    local presentation_default_model_params
-    local trashpanda_vmid
-    local trashpanda_hostname
-    local trashpanda_ip_config
-    local trashpanda_rootfs_size_gb
-    local trashpanda_cores
-    local trashpanda_memory_mb
-    local trashpanda_swap_mb
-    local trashpanda_unprivileged
-    local trashpanda_onboot
-    local trashpanda_startup
-    local trashpanda_tags
-    local trashpanda_features
-    local trashpanda_docker_root_host_path
-    local trashpanda_data_host_path
-    local trashpanda_root_password
-    local engine_ipv4
+    local llama_context_size
+    local llama_gpu_layers
+    local llama_threads
 
     if [[ $# -lt 1 || $# -gt 2 ]]; then
         usage
@@ -531,12 +420,6 @@ main() {
     require_command pct
 
     load_yaml_into_config "$platform_path"
-    if [[ -f "$presentation_platform_path" ]]; then
-        load_yaml_into_config "$presentation_platform_path"
-    fi
-    if [[ -f "$trashpanda_platform_path" ]]; then
-        load_yaml_into_config "$trashpanda_platform_path"
-    fi
     load_yaml_into_config "$inventory_path"
 
     vmid="$(config_get engine.vmid)"
@@ -561,46 +444,14 @@ main() {
     enable_gpu="$(config_get engine.enable_gpu true)"
     card0_path="$(config_get engine.gpu.card0 /dev/dri/card0)"
     render_path="$(config_get engine.gpu.render /dev/dri/renderD128)"
-    backend="$(config_get engine.backend ollama)"
-    api_port="$(config_get engine.api_port 8080)"
-    manager_port="$(config_get engine.manager_port 18080)"
+    webui_port="$(config_get engine.webui_port 8080)"
+    localai_port="$(config_get engine.localai_port 8081)"
+    llama_server_port="$(config_get engine.llama_server_port 8082)"
     default_model="$(config_get engine.default_model qwen2.5-coder:7b)"
     pull_default_model="$(config_get engine.pull_default_model false)"
-    verbose_model_alias="$(config_get engine.verbose_model_alias)"
-    verbose_system_prompt="$(config_get engine.verbose_system_prompt 'Provide thorough, information-dense answers. State assumptions, explain tradeoffs, and include concrete next steps when helpful.')"
-    verbose_num_predict="$(config_get engine.verbose_num_predict 4096)"
-    presentation_vmid="$(config_get presentation.vmid)"
-    presentation_hostname="$(config_get presentation.hostname presentation)"
-    presentation_ip_config="$(config_get presentation.ipv4 dhcp)"
-    presentation_rootfs_size_gb="$(config_get presentation.rootfs_size_gb 32)"
-    presentation_cores="$(config_get presentation.cores 4)"
-    presentation_memory_mb="$(config_get presentation.memory_mb 8192)"
-    presentation_swap_mb="$(config_get presentation.swap_mb 2048)"
-    presentation_unprivileged="$(bool_to_pct "$(config_get presentation.unprivileged true)")"
-    presentation_onboot="$(bool_to_pct "$(config_get presentation.onboot true)")"
-    presentation_startup="$(config_get presentation.startup 'order=30,up=15')"
-    presentation_tags="$(config_get presentation.tags 'ai-presentation;shared;openwebui')"
-    presentation_features="$(config_get presentation.features 'nesting=1,keyctl=1')"
-    presentation_ui_port="$(config_get presentation.ui_port 3000)"
-    presentation_webui_auth="$(config_get presentation.webui_auth false)"
-    presentation_engine_base_url="$(config_get presentation.engine_base_url)"
-    presentation_default_models="$(config_get presentation.default_models "$default_model")"
-    presentation_default_model_params="$(config_get presentation.default_model_params '{"stream_response":true}')"
-    trashpanda_vmid="$(config_get trashpanda_app.vmid)"
-    trashpanda_hostname="$(config_get trashpanda_app.hostname trashpanda-app)"
-    trashpanda_ip_config="$(config_get trashpanda_app.ipv4 dhcp)"
-    trashpanda_rootfs_size_gb="$(config_get trashpanda_app.rootfs_size_gb 64)"
-    trashpanda_cores="$(config_get trashpanda_app.cores 8)"
-    trashpanda_memory_mb="$(config_get trashpanda_app.memory_mb 16384)"
-    trashpanda_swap_mb="$(config_get trashpanda_app.swap_mb 2048)"
-    trashpanda_unprivileged="$(bool_to_pct "$(config_get trashpanda_app.unprivileged true)")"
-    trashpanda_onboot="$(bool_to_pct "$(config_get trashpanda_app.onboot true)")"
-    trashpanda_startup="$(config_get trashpanda_app.startup 'order=40,up=15')"
-    trashpanda_tags="$(config_get trashpanda_app.tags 'app;trashpanda')"
-    trashpanda_features="$(config_get trashpanda_app.features 'nesting=1,keyctl=1')"
-    trashpanda_docker_root_host_path="$(config_get trashpanda_app.docker_root_host_path)"
-    trashpanda_data_host_path="$(config_get trashpanda_app.data_host_path)"
-    trashpanda_root_password="${TRASHPANDA_APP_ROOT_PASSWORD:-}"
+    llama_context_size="$(config_get engine.llama_context_size 8192)"
+    llama_gpu_layers="$(config_get engine.llama_gpu_layers 99)"
+    llama_threads="$(config_get engine.llama_threads 12)"
 
     [[ -n "$vmid" ]] || fail "engine.vmid must be set in inventory or platform definition"
     [[ -n "$ostemplate" ]] || fail "proxmox.ostemplate must be set in inventory"
@@ -609,7 +460,13 @@ main() {
     [[ -n "$state_source" ]] || fail "storage.state_host_path must be set in inventory"
     [[ -n "$scratch_source" ]] || fail "storage.scratch_host_path must be set in inventory"
 
-    log "Reconciling shared AI appliance LXC on HLH"
+    if [[ -n "$(config_get presentation.vmid)" || -n "$(config_get trashpanda_app.vmid)" ]]; then
+        fail "Legacy inventory keys detected (presentation.* or trashpanda_app.*). Remove those sections to use the single-engine stack."
+    fi
+
+    ensure_engine_recreated_for_llama_stack "$vmid" "llama-stack" "$inventory_path"
+
+    log "Reconciling shared AI engine LXC on HLH"
     ensure_container_base "engine" "$vmid" "$hostname" "$ostemplate" "$storage" "$rootfs_size_gb" "$bridge" "$ip_config" "$gateway" "$cores" "$memory_mb" "$swap_mb" "$unprivileged" "$onboot" "$tags" "$features" "$startup"
     ensure_engine_mounts "$vmid" "$models_source" "$state_source" "$scratch_source"
     ensure_engine_gpu_devices "$vmid" "$enable_gpu" "$card0_path" "$render_path"
@@ -618,49 +475,8 @@ main() {
         run_cmd pct start "$vmid"
     fi
 
-    provision_engine_runtime "$vmid" "$backend" "$api_port" "$manager_port" "$default_model" "$pull_default_model" "$verbose_model_alias" "$verbose_system_prompt" "$verbose_num_predict"
-    log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname"
-
-    if [[ "$backend" == "ollama" ]]; then
-        [[ -n "$presentation_vmid" ]] || fail "presentation.vmid must be set in inventory when engine.backend=ollama"
-
-        if [[ -z "$presentation_engine_base_url" ]]; then
-            if [[ "$MODE" == "plan" ]]; then
-                presentation_engine_base_url="http://<engine-ip>:${api_port}"
-            else
-                engine_ipv4="$(container_ipv4 "$vmid")"
-                [[ -n "$engine_ipv4" ]] || fail "Unable to determine engine container IPv4 address for presentation wiring"
-                presentation_engine_base_url="http://${engine_ipv4}:${api_port}"
-            fi
-        fi
-
-        log "Reconciling presentation LXC on HLH"
-        ensure_container_base "presentation" "$presentation_vmid" "$presentation_hostname" "$ostemplate" "$storage" "$presentation_rootfs_size_gb" "$bridge" "$presentation_ip_config" "$gateway" "$presentation_cores" "$presentation_memory_mb" "$presentation_swap_mb" "$presentation_unprivileged" "$presentation_onboot" "$presentation_tags" "$presentation_features" "$presentation_startup"
-
-        if ! container_running "$presentation_vmid"; then
-            run_cmd pct start "$presentation_vmid"
-        fi
-
-        provision_presentation_runtime "$presentation_vmid" "$presentation_ui_port" "$presentation_engine_base_url" "$presentation_webui_auth" "$presentation_default_models" "$presentation_default_model_params"
-        log "Presentation LXC reconciliation complete: vmid=$presentation_vmid hostname=$presentation_hostname base_url=$presentation_engine_base_url"
-    fi
-
-    if [[ -n "$trashpanda_vmid" ]]; then
-        [[ -n "$trashpanda_docker_root_host_path" ]] || fail "trashpanda_app.docker_root_host_path must be set when trashpanda_app.vmid is configured"
-        [[ -n "$trashpanda_data_host_path" ]] || fail "trashpanda_app.data_host_path must be set when trashpanda_app.vmid is configured"
-
-        log "Reconciling TrashPanda app LXC on HLH"
-        ensure_container_base "trashpanda-app" "$trashpanda_vmid" "$trashpanda_hostname" "$ostemplate" "$storage" "$trashpanda_rootfs_size_gb" "$bridge" "$trashpanda_ip_config" "$gateway" "$trashpanda_cores" "$trashpanda_memory_mb" "$trashpanda_swap_mb" "$trashpanda_unprivileged" "$trashpanda_onboot" "$trashpanda_tags" "$trashpanda_features" "$trashpanda_startup"
-        ensure_trashpanda_mounts "$trashpanda_vmid" "$trashpanda_docker_root_host_path" "$trashpanda_data_host_path" "$trashpanda_unprivileged"
-
-        if ! container_running "$trashpanda_vmid"; then
-            run_cmd pct start "$trashpanda_vmid"
-        fi
-
-        set_container_root_password_if_configured "$trashpanda_vmid" "$trashpanda_root_password"
-        provision_trashpanda_runtime "$trashpanda_vmid" "/var/lib/docker"
-        log "TrashPanda app LXC reconciliation complete: vmid=$trashpanda_vmid hostname=$trashpanda_hostname"
-    fi
+    provision_engine_runtime "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads"
+    log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname webui_port=$webui_port localai_port=$localai_port llama_server_port=$llama_server_port"
 }
 
 main "$@"

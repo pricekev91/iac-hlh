@@ -6,17 +6,18 @@ engine:
   memory_mb: 49152
   swap_mb: 4096
   rootfs_size_gb: 96
-  tags: ai-appliance;shared;engine
+  tags: ai-engine;shared;llama-stack
   features: nesting=1,keyctl=1
   enable_gpu: true
-  api_port: 8080
-  manager_port: 18080
-  backend: ollama
+  webui_port: 8080
+  localai_port: 8081
+  llama_server_port: 8082
   default_model: qwen2.5-coder:7b
+  default_model_path: /srv/ai/models/default.gguf
   pull_default_model: false
-  verbose_model_alias: qwen2.5-coder-verbose:latest
-  verbose_num_predict: 4096
-  verbose_system_prompt: Provide thorough, information-dense answers. State assumptions, explain tradeoffs, and include concrete next steps when helpful.
+  llama_context_size: 8192
+  llama_gpu_layers: 99
+  llama_threads: 12
 
   gpu:
     card0: /dev/dri/card0
