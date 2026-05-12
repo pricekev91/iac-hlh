@@ -322,10 +322,11 @@ provision_engine_runtime() {
     local localai_port="$3"
     local llama_server_port="$4"
     local default_model="$5"
-    local pull_default_model="$6"
-    local llama_context_size="$7"
-    local llama_gpu_layers="$8"
-    local llama_threads="$9"
+    local default_model_url="$6"
+    local pull_default_model="$7"
+    local llama_context_size="$8"
+    local llama_gpu_layers="$9"
+    local llama_threads="${10}"
     local target_script="/root/provision-ai-appliance.bash"
     local provision_script="$SCRIPT_DIR/scripts/provision-ai-appliance.bash"
 
@@ -333,8 +334,8 @@ provision_engine_runtime() {
 
     if [[ "$MODE" == "plan" ]]; then
         printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env AI_ENGINE_WEBUI_PORT=%q AI_ENGINE_LOCALAI_PORT=%q AI_ENGINE_LLAMA_SERVER_PORT=%q AI_ENGINE_DEFAULT_MODEL=%q AI_ENGINE_PULL_DEFAULT_MODEL=%q AI_ENGINE_LLAMA_CONTEXT_SIZE=%q AI_ENGINE_LLAMA_GPU_LAYERS=%q AI_ENGINE_LLAMA_THREADS=%q %q\n' \
-            "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$target_script"
+        printf '[plan] pct exec %q -- env AI_ENGINE_WEBUI_PORT=%q AI_ENGINE_LOCALAI_PORT=%q AI_ENGINE_LLAMA_SERVER_PORT=%q AI_ENGINE_DEFAULT_MODEL=%q AI_ENGINE_DEFAULT_MODEL_URL=%q AI_ENGINE_PULL_DEFAULT_MODEL=%q AI_ENGINE_LLAMA_CONTEXT_SIZE=%q AI_ENGINE_LLAMA_GPU_LAYERS=%q AI_ENGINE_LLAMA_THREADS=%q %q\n' \
+            "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$default_model_url" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$target_script"
         return 0
     fi
 
@@ -344,6 +345,7 @@ provision_engine_runtime() {
         AI_ENGINE_LOCALAI_PORT="$localai_port" \
         AI_ENGINE_LLAMA_SERVER_PORT="$llama_server_port" \
         AI_ENGINE_DEFAULT_MODEL="$default_model" \
+        AI_ENGINE_DEFAULT_MODEL_URL="$default_model_url" \
         AI_ENGINE_PULL_DEFAULT_MODEL="$pull_default_model" \
         AI_ENGINE_LLAMA_CONTEXT_SIZE="$llama_context_size" \
         AI_ENGINE_LLAMA_GPU_LAYERS="$llama_gpu_layers" \
@@ -398,6 +400,7 @@ main() {
     local localai_port
     local llama_server_port
     local default_model
+    local default_model_url
     local pull_default_model
     local llama_context_size
     local llama_gpu_layers
@@ -448,6 +451,7 @@ main() {
     localai_port="$(config_get engine.localai_port 8081)"
     llama_server_port="$(config_get engine.llama_server_port 8082)"
     default_model="$(config_get engine.default_model qwen2.5-coder:7b)"
+    default_model_url="$(config_get engine.default_model_url '')"
     pull_default_model="$(config_get engine.pull_default_model false)"
     llama_context_size="$(config_get engine.llama_context_size 8192)"
     llama_gpu_layers="$(config_get engine.llama_gpu_layers 99)"
@@ -475,7 +479,7 @@ main() {
         run_cmd pct start "$vmid"
     fi
 
-    provision_engine_runtime "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads"
+    provision_engine_runtime "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$default_model_url" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads"
     log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname webui_port=$webui_port localai_port=$localai_port llama_server_port=$llama_server_port"
 }
 

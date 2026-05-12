@@ -34,6 +34,7 @@ AI_ENGINE_LOCALAI_PORT=${AI_ENGINE_LOCALAI_PORT}
 AI_ENGINE_LLAMA_SERVER_HOST=0.0.0.0
 AI_ENGINE_LLAMA_SERVER_PORT=${AI_ENGINE_LLAMA_SERVER_PORT}
 AI_ENGINE_DEFAULT_MODEL=${AI_ENGINE_DEFAULT_MODEL}
+AI_ENGINE_DEFAULT_MODEL_URL=${AI_ENGINE_DEFAULT_MODEL_URL}
 AI_ENGINE_DEFAULT_MODEL_PATH=${AI_ENGINE_DEFAULT_MODEL_PATH}
 AI_ENGINE_PULL_DEFAULT_MODEL=${AI_ENGINE_PULL_DEFAULT_MODEL}
 AI_ENGINE_LLAMA_CONTEXT_SIZE=${AI_ENGINE_LLAMA_CONTEXT_SIZE}
@@ -54,6 +55,7 @@ webui_port=${AI_ENGINE_WEBUI_PORT:-unknown}
 localai_port=${AI_ENGINE_LOCALAI_PORT:-unknown}
 llama_server_port=${AI_ENGINE_LLAMA_SERVER_PORT:-unknown}
 default_model=${AI_ENGINE_DEFAULT_MODEL:-unknown}
+default_model_url=${AI_ENGINE_DEFAULT_MODEL_URL:-unknown}
 default_model_path=${AI_ENGINE_DEFAULT_MODEL_PATH:-unknown}
 models_dir=/srv/ai/models
 state_dir=/srv/ai/state
@@ -268,7 +270,17 @@ pull_default_model_if_requested() {
     return 0
   fi
 
-  # Best-effort default model fetch. Users can still manage models via LocalAI.
+  if [[ -n "${AI_ENGINE_DEFAULT_MODEL_URL}" ]]; then
+    install -d -m 0755 "$(dirname "${AI_ENGINE_DEFAULT_MODEL_PATH}")"
+    log "Downloading default GGUF model to ${AI_ENGINE_DEFAULT_MODEL_PATH}"
+    curl -fL --retry 5 --retry-delay 3 -o "${AI_ENGINE_DEFAULT_MODEL_PATH}" "${AI_ENGINE_DEFAULT_MODEL_URL}"
+    chmod 0644 "${AI_ENGINE_DEFAULT_MODEL_PATH}"
+    systemctl restart ai-engine-localai.service
+    systemctl restart ai-engine-llama-server.service || true
+    return 0
+  fi
+
+  # Best-effort LocalAI catalog pull when no direct model URL is set.
   curl -fsSL "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/models/apply" \
     -H 'Content-Type: application/json' \
     -d "{\"id\":\"${AI_ENGINE_DEFAULT_MODEL}\"}" >/dev/null 2>&1 || true
@@ -300,9 +312,10 @@ main() {
   export AI_ENGINE_WEBUI_PORT="${AI_ENGINE_WEBUI_PORT:-8080}"
   export AI_ENGINE_LOCALAI_PORT="${AI_ENGINE_LOCALAI_PORT:-8081}"
   export AI_ENGINE_LLAMA_SERVER_PORT="${AI_ENGINE_LLAMA_SERVER_PORT:-8082}"
-  export AI_ENGINE_DEFAULT_MODEL="${AI_ENGINE_DEFAULT_MODEL:-qwen2.5-coder:7b}"
+  export AI_ENGINE_DEFAULT_MODEL="${AI_ENGINE_DEFAULT_MODEL:-tinyllama-1.1b-chat-v1.0}"
+  export AI_ENGINE_DEFAULT_MODEL_URL="${AI_ENGINE_DEFAULT_MODEL_URL:-https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf}"
   export AI_ENGINE_DEFAULT_MODEL_PATH="${AI_ENGINE_DEFAULT_MODEL_PATH:-/srv/ai/models/default.gguf}"
-  export AI_ENGINE_PULL_DEFAULT_MODEL="${AI_ENGINE_PULL_DEFAULT_MODEL:-false}"
+  export AI_ENGINE_PULL_DEFAULT_MODEL="${AI_ENGINE_PULL_DEFAULT_MODEL:-true}"
   export AI_ENGINE_LLAMA_CONTEXT_SIZE="${AI_ENGINE_LLAMA_CONTEXT_SIZE:-8192}"
   export AI_ENGINE_LLAMA_GPU_LAYERS="${AI_ENGINE_LLAMA_GPU_LAYERS:-99}"
   export AI_ENGINE_LLAMA_THREADS="${AI_ENGINE_LLAMA_THREADS:-12}"
