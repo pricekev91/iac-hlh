@@ -187,7 +187,7 @@ if [[ ! -f "$model_path" ]]; then
 fi
 
 extra_args=()
-[[ "${AI_ENGINE_LLAMA_FLASH_ATTN,,}" == "true" ]] && extra_args+=(--flash-attn)
+[[ "${AI_ENGINE_LLAMA_FLASH_ATTN,,}" == "true" ]] && extra_args+=(--flash-attn on)
 [[ "${AI_ENGINE_LLAMA_NO_MMAP,,}" == "true" ]] && extra_args+=(--no-mmap)
 [[ "${AI_ENGINE_LLAMA_MLOCK,,}" == "true" ]] && extra_args+=(--mlock)
 [[ -n "${AI_ENGINE_LLAMA_MOE_K:-}" && "${AI_ENGINE_LLAMA_MOE_K}" != "0" ]] && extra_args+=(--moe "k=${AI_ENGINE_LLAMA_MOE_K}")
