@@ -20,7 +20,7 @@ require_root() {
 install_base_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y ca-certificates curl jq git cmake ninja-build build-essential pkg-config libvulkan-dev vulkan-tools shaderc docker.io docker-compose-v2 nginx gettext-base
+  apt-get install -y ca-certificates curl jq git cmake ninja-build build-essential pkg-config libvulkan-dev vulkan-tools glslc docker.io docker-compose-v2 nginx gettext-base
 }
 
 write_runtime_contract() {
