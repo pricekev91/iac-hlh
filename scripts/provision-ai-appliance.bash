@@ -222,6 +222,7 @@ Type=simple
 EnvironmentFile=/etc/ai-engine/runtime.env
 ExecStartPre=-/usr/bin/docker rm -f ai-engine-localai
 ExecStart=/usr/bin/docker run --rm --name ai-engine-localai \
+  --security-opt apparmor=unconfined \
   -p ${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080 \
   -v /srv/ai/models:/models \
   -v /srv/ai/state/localai:/tmp/localai \
@@ -275,9 +276,22 @@ pull_default_model_if_requested() {
   if [[ -n "${AI_ENGINE_DEFAULT_MODEL_URL}" ]]; then
     install -d -m 0755 "$(dirname "${AI_ENGINE_DEFAULT_MODEL_PATH}")"
     log "Downloading default GGUF model to ${AI_ENGINE_DEFAULT_MODEL_PATH}"
-    curl -fL --retry 5 --retry-delay 3 -o "${AI_ENGINE_DEFAULT_MODEL_PATH}" "${AI_ENGINE_DEFAULT_MODEL_URL}"
+    local tmp_model_path
+    tmp_model_path="${AI_ENGINE_DEFAULT_MODEL_PATH}.part"
+
+    rm -f "${tmp_model_path}" "${AI_ENGINE_DEFAULT_MODEL_PATH}"
+    curl -fL --retry 5 --retry-delay 3 -o "${tmp_model_path}" "${AI_ENGINE_DEFAULT_MODEL_URL}"
+
+    # Validate GGUF magic before promoting to default model path.
+    if [[ "$(head -c 4 "${tmp_model_path}" 2>/dev/null || true)" != "GGUF" ]]; then
+      fail "Downloaded model is not a valid GGUF payload (missing GGUF header)"
+    fi
+
+    mv -f "${tmp_model_path}" "${AI_ENGINE_DEFAULT_MODEL_PATH}"
     chmod 0644 "${AI_ENGINE_DEFAULT_MODEL_PATH}"
+
     systemctl restart ai-engine-localai.service
+    systemctl reset-failed ai-engine-llama-server.service || true
     systemctl restart ai-engine-llama-server.service || true
     return 0
   fi
