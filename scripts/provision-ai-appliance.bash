@@ -41,6 +41,15 @@ AI_ENGINE_PULL_DEFAULT_MODEL=${AI_ENGINE_PULL_DEFAULT_MODEL}
 AI_ENGINE_LLAMA_CONTEXT_SIZE=${AI_ENGINE_LLAMA_CONTEXT_SIZE}
 AI_ENGINE_LLAMA_GPU_LAYERS=${AI_ENGINE_LLAMA_GPU_LAYERS}
 AI_ENGINE_LLAMA_THREADS=${AI_ENGINE_LLAMA_THREADS}
+AI_ENGINE_LLAMA_BATCH_SIZE=${AI_ENGINE_LLAMA_BATCH_SIZE}
+AI_ENGINE_LLAMA_PARALLEL=${AI_ENGINE_LLAMA_PARALLEL}
+AI_ENGINE_LLAMA_FLASH_ATTN=${AI_ENGINE_LLAMA_FLASH_ATTN}
+AI_ENGINE_LLAMA_NO_MMAP=${AI_ENGINE_LLAMA_NO_MMAP}
+AI_ENGINE_LLAMA_MLOCK=${AI_ENGINE_LLAMA_MLOCK}
+AI_ENGINE_LLAMA_MOE_K=${AI_ENGINE_LLAMA_MOE_K}
+AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD=${AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD}
+AI_ENGINE_LLAMA_CACHE_QUANT=${AI_ENGINE_LLAMA_CACHE_QUANT}
+AI_ENGINE_LLAMA_CACHE_TYPE=${AI_ENGINE_LLAMA_CACHE_TYPE}
 EOF
 
   cat >/usr/local/bin/ai-engine-status <<'EOF'
@@ -177,13 +186,25 @@ if [[ ! -f "$model_path" ]]; then
   exit 0
 fi
 
+extra_args=()
+[[ "${AI_ENGINE_LLAMA_FLASH_ATTN,,}" == "true" ]] && extra_args+=(--flash-attn)
+[[ "${AI_ENGINE_LLAMA_NO_MMAP,,}" == "true" ]] && extra_args+=(--no-mmap)
+[[ "${AI_ENGINE_LLAMA_MLOCK,,}" == "true" ]] && extra_args+=(--mlock)
+[[ -n "${AI_ENGINE_LLAMA_MOE_K:-}" && "${AI_ENGINE_LLAMA_MOE_K}" != "0" ]] && extra_args+=(--moe "k=${AI_ENGINE_LLAMA_MOE_K}")
+[[ -n "${AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD:-}" ]] && extra_args+=(--moe-expert-offload "${AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD}")
+[[ -n "${AI_ENGINE_LLAMA_CACHE_QUANT:-}" && "${AI_ENGINE_LLAMA_CACHE_QUANT}" != "0" ]] && extra_args+=(--cache-quant "${AI_ENGINE_LLAMA_CACHE_QUANT}")
+[[ -n "${AI_ENGINE_LLAMA_CACHE_TYPE:-}" ]] && extra_args+=(--cache-type "${AI_ENGINE_LLAMA_CACHE_TYPE}")
+
 exec /usr/local/bin/llama-server \
   --host "${AI_ENGINE_LLAMA_SERVER_HOST}" \
   --port "${AI_ENGINE_LLAMA_SERVER_PORT}" \
   --model "$model_path" \
   --ctx-size "${AI_ENGINE_LLAMA_CONTEXT_SIZE}" \
+  --batch-size "${AI_ENGINE_LLAMA_BATCH_SIZE:-512}" \
   --gpu-layers "${AI_ENGINE_LLAMA_GPU_LAYERS}" \
-  --threads "${AI_ENGINE_LLAMA_THREADS}"
+  --threads "${AI_ENGINE_LLAMA_THREADS}" \
+  --parallel "${AI_ENGINE_LLAMA_PARALLEL:-1}" \
+  "${extra_args[@]}"
 EOF
 
   chmod 0755 /usr/local/bin/ai-engine-llama-server

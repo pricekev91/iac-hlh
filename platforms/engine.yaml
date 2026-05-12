@@ -19,6 +19,15 @@ engine:
   llama_context_size: 8192
   llama_gpu_layers: 99
   llama_threads: 12
+  llama_batch_size: 512
+  llama_parallel: 1
+  llama_flash_attn: false
+  llama_no_mmap: false
+  llama_mlock: false
+  llama_moe_k: 0
+  llama_moe_expert_offload: ""
+  llama_cache_quant: 0
+  llama_cache_type: ""
 
   gpu:
     card0: /dev/dri/card0

@@ -327,6 +327,16 @@ provision_engine_runtime() {
     local llama_context_size="$8"
     local llama_gpu_layers="$9"
     local llama_threads="${10}"
+    local llama_batch_size="${11}"
+    local llama_parallel="${12}"
+    local llama_flash_attn="${13}"
+    local llama_no_mmap="${14}"
+    local llama_mlock="${15}"
+    local llama_moe_k="${16}"
+    local llama_moe_expert_offload="${17}"
+    local llama_cache_quant="${18}"
+    local llama_cache_type="${19}"
+    local llama_model_path="${20}"
     local target_script="/root/provision-ai-appliance.bash"
     local provision_script="$SCRIPT_DIR/scripts/provision-ai-appliance.bash"
 
@@ -334,8 +344,8 @@ provision_engine_runtime() {
 
     if [[ "$MODE" == "plan" ]]; then
         printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env AI_ENGINE_WEBUI_PORT=%q AI_ENGINE_LOCALAI_PORT=%q AI_ENGINE_LLAMA_SERVER_PORT=%q AI_ENGINE_DEFAULT_MODEL=%q AI_ENGINE_DEFAULT_MODEL_URL=%q AI_ENGINE_PULL_DEFAULT_MODEL=%q AI_ENGINE_LLAMA_CONTEXT_SIZE=%q AI_ENGINE_LLAMA_GPU_LAYERS=%q AI_ENGINE_LLAMA_THREADS=%q %q\n' \
-            "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$default_model_url" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$target_script"
+        printf '[plan] pct exec %q -- env AI_ENGINE_WEBUI_PORT=%q AI_ENGINE_LOCALAI_PORT=%q AI_ENGINE_LLAMA_SERVER_PORT=%q AI_ENGINE_DEFAULT_MODEL=%q AI_ENGINE_DEFAULT_MODEL_URL=%q AI_ENGINE_DEFAULT_MODEL_PATH=%q AI_ENGINE_PULL_DEFAULT_MODEL=%q AI_ENGINE_LLAMA_CONTEXT_SIZE=%q AI_ENGINE_LLAMA_GPU_LAYERS=%q AI_ENGINE_LLAMA_THREADS=%q AI_ENGINE_LLAMA_BATCH_SIZE=%q AI_ENGINE_LLAMA_PARALLEL=%q AI_ENGINE_LLAMA_FLASH_ATTN=%q AI_ENGINE_LLAMA_NO_MMAP=%q AI_ENGINE_LLAMA_MLOCK=%q AI_ENGINE_LLAMA_MOE_K=%q AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD=%q AI_ENGINE_LLAMA_CACHE_QUANT=%q AI_ENGINE_LLAMA_CACHE_TYPE=%q %q\n' \
+            "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$default_model_url" "$llama_model_path" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$llama_batch_size" "$llama_parallel" "$llama_flash_attn" "$llama_no_mmap" "$llama_mlock" "$llama_moe_k" "$llama_moe_expert_offload" "$llama_cache_quant" "$llama_cache_type" "$target_script"
         return 0
     fi
 
@@ -346,10 +356,20 @@ provision_engine_runtime() {
         AI_ENGINE_LLAMA_SERVER_PORT="$llama_server_port" \
         AI_ENGINE_DEFAULT_MODEL="$default_model" \
         AI_ENGINE_DEFAULT_MODEL_URL="$default_model_url" \
+        AI_ENGINE_DEFAULT_MODEL_PATH="$llama_model_path" \
         AI_ENGINE_PULL_DEFAULT_MODEL="$pull_default_model" \
         AI_ENGINE_LLAMA_CONTEXT_SIZE="$llama_context_size" \
         AI_ENGINE_LLAMA_GPU_LAYERS="$llama_gpu_layers" \
         AI_ENGINE_LLAMA_THREADS="$llama_threads" \
+        AI_ENGINE_LLAMA_BATCH_SIZE="$llama_batch_size" \
+        AI_ENGINE_LLAMA_PARALLEL="$llama_parallel" \
+        AI_ENGINE_LLAMA_FLASH_ATTN="$llama_flash_attn" \
+        AI_ENGINE_LLAMA_NO_MMAP="$llama_no_mmap" \
+        AI_ENGINE_LLAMA_MLOCK="$llama_mlock" \
+        AI_ENGINE_LLAMA_MOE_K="$llama_moe_k" \
+        AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD="$llama_moe_expert_offload" \
+        AI_ENGINE_LLAMA_CACHE_QUANT="$llama_cache_quant" \
+        AI_ENGINE_LLAMA_CACHE_TYPE="$llama_cache_type" \
         "$target_script"
 }
 
@@ -405,6 +425,16 @@ main() {
     local llama_context_size
     local llama_gpu_layers
     local llama_threads
+    local llama_batch_size
+    local llama_parallel
+    local llama_flash_attn
+    local llama_no_mmap
+    local llama_mlock
+    local llama_moe_k
+    local llama_moe_expert_offload
+    local llama_cache_quant
+    local llama_cache_type
+    local llama_model_path
 
     if [[ $# -lt 1 || $# -gt 2 ]]; then
         usage
@@ -456,6 +486,16 @@ main() {
     llama_context_size="$(config_get engine.llama_context_size 8192)"
     llama_gpu_layers="$(config_get engine.llama_gpu_layers 99)"
     llama_threads="$(config_get engine.llama_threads 12)"
+    llama_batch_size="$(config_get engine.llama_batch_size 512)"
+    llama_parallel="$(config_get engine.llama_parallel 1)"
+    llama_flash_attn="$(config_get engine.llama_flash_attn false)"
+    llama_no_mmap="$(config_get engine.llama_no_mmap false)"
+    llama_mlock="$(config_get engine.llama_mlock false)"
+    llama_moe_k="$(config_get engine.llama_moe_k 0)"
+    llama_moe_expert_offload="$(config_get engine.llama_moe_expert_offload '')"
+    llama_cache_quant="$(config_get engine.llama_cache_quant 0)"
+    llama_cache_type="$(config_get engine.llama_cache_type '')"
+    llama_model_path="$(config_get engine.default_model_path /srv/ai/models/default.gguf)"
 
     [[ -n "$vmid" ]] || fail "engine.vmid must be set in inventory or platform definition"
     [[ -n "$ostemplate" ]] || fail "proxmox.ostemplate must be set in inventory"
@@ -479,7 +519,7 @@ main() {
         run_cmd pct start "$vmid"
     fi
 
-    provision_engine_runtime "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$default_model_url" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads"
+    provision_engine_runtime "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$default_model_url" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$llama_batch_size" "$llama_parallel" "$llama_flash_attn" "$llama_no_mmap" "$llama_mlock" "$llama_moe_k" "$llama_moe_expert_offload" "$llama_cache_quant" "$llama_cache_type" "$llama_model_path"
     log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname webui_port=$webui_port localai_port=$localai_port llama_server_port=$llama_server_port"
 }
 
