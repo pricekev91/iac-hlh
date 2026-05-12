@@ -190,10 +190,10 @@ extra_args=()
 [[ "${AI_ENGINE_LLAMA_FLASH_ATTN,,}" == "true" ]] && extra_args+=(--flash-attn on)
 [[ "${AI_ENGINE_LLAMA_NO_MMAP,,}" == "true" ]] && extra_args+=(--no-mmap)
 [[ "${AI_ENGINE_LLAMA_MLOCK,,}" == "true" ]] && extra_args+=(--mlock)
-[[ -n "${AI_ENGINE_LLAMA_MOE_K:-}" && "${AI_ENGINE_LLAMA_MOE_K}" != "0" ]] && extra_args+=(--moe "k=${AI_ENGINE_LLAMA_MOE_K}")
-[[ -n "${AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD:-}" ]] && extra_args+=(--moe-expert-offload "${AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD}")
-[[ -n "${AI_ENGINE_LLAMA_CACHE_QUANT:-}" && "${AI_ENGINE_LLAMA_CACHE_QUANT}" != "0" ]] && extra_args+=(--cache-quant "${AI_ENGINE_LLAMA_CACHE_QUANT}")
-[[ -n "${AI_ENGINE_LLAMA_CACHE_TYPE:-}" ]] && extra_args+=(--cache-type "${AI_ENGINE_LLAMA_CACHE_TYPE}")
+[[ -n "${AI_ENGINE_LLAMA_MOE_K:-}" && "${AI_ENGINE_LLAMA_MOE_K}" != "0" ]] && extra_args+=(--n-cpu-moe "${AI_ENGINE_LLAMA_MOE_K}")
+[[ -n "${AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD:-}" ]] && extra_args+=(--cpu-moe)
+[[ -n "${AI_ENGINE_LLAMA_CACHE_QUANT:-}" && "${AI_ENGINE_LLAMA_CACHE_QUANT}" != "0" ]] && true  # --cache-quant not supported; skipped
+[[ -n "${AI_ENGINE_LLAMA_CACHE_TYPE:-}" ]] && extra_args+=(--cache-type-k "${AI_ENGINE_LLAMA_CACHE_TYPE}")
 
 exec /usr/local/bin/llama-server \
   --host "${AI_ENGINE_LLAMA_SERVER_HOST}" \
