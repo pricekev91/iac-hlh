@@ -20,7 +20,7 @@ require_root() {
 install_base_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y ca-certificates curl jq git cmake ninja-build build-essential pkg-config libvulkan-dev vulkan-tools glslc docker.io docker-compose-v2 nginx gettext-base
+  apt-get install -y ca-certificates curl jq git cmake ninja-build build-essential pkg-config libvulkan-dev vulkan-tools glslc spirv-headers docker.io docker-compose-v2 nginx gettext-base
 }
 
 write_runtime_contract() {
@@ -75,10 +75,11 @@ install_llama_cpp_server() {
     git -C "$src_root" reset --hard origin/master
   fi
 
+  # Clean stale build cache to avoid cmake re-using invalid cached paths
+  rm -rf "$build_root"
+
   cmake -S "$src_root" -B "$build_root" -G Ninja -DGGML_VULKAN=ON -DLLAMA_BUILD_SERVER=ON -DCMAKE_BUILD_TYPE=Release
-  if ! cmake --build "$build_root" --target llama-server -j"$(nproc)"; then
-    cmake --build "$build_root" --target server -j"$(nproc)"
-  fi
+  cmake --build "$build_root" --target llama-server -j"$(nproc)"
 
   if [[ -x "$build_root/bin/llama-server" ]]; then
     install -m 0755 "$build_root/bin/llama-server" /usr/local/bin/llama-server
