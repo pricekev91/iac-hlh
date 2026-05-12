@@ -31,6 +31,7 @@ AI_ENGINE_WEBUI_HOST=0.0.0.0
 AI_ENGINE_WEBUI_PORT=${AI_ENGINE_WEBUI_PORT}
 AI_ENGINE_LOCALAI_HOST=0.0.0.0
 AI_ENGINE_LOCALAI_PORT=${AI_ENGINE_LOCALAI_PORT}
+AI_ENGINE_LOCALAI_IMAGE=${AI_ENGINE_LOCALAI_IMAGE}
 AI_ENGINE_LLAMA_SERVER_HOST=0.0.0.0
 AI_ENGINE_LLAMA_SERVER_PORT=${AI_ENGINE_LLAMA_SERVER_PORT}
 AI_ENGINE_DEFAULT_MODEL=${AI_ENGINE_DEFAULT_MODEL}
@@ -53,6 +54,7 @@ fi
 cat <<STATUS
 webui_port=${AI_ENGINE_WEBUI_PORT:-unknown}
 localai_port=${AI_ENGINE_LOCALAI_PORT:-unknown}
+localai_image=${AI_ENGINE_LOCALAI_IMAGE:-unknown}
 llama_server_port=${AI_ENGINE_LLAMA_SERVER_PORT:-unknown}
 default_model=${AI_ENGINE_DEFAULT_MODEL:-unknown}
 default_model_url=${AI_ENGINE_DEFAULT_MODEL_URL:-unknown}
@@ -223,7 +225,7 @@ ExecStart=/usr/bin/docker run --rm --name ai-engine-localai \
   -p ${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080 \
   -v /srv/ai/models:/models \
   -v /srv/ai/state/localai:/tmp/localai \
-  ghcr.io/mudler/localai:latest
+  ${AI_ENGINE_LOCALAI_IMAGE}
 ExecStop=/usr/bin/docker stop ai-engine-localai
 Restart=always
 RestartSec=2
@@ -311,6 +313,7 @@ main() {
 
   export AI_ENGINE_WEBUI_PORT="${AI_ENGINE_WEBUI_PORT:-8080}"
   export AI_ENGINE_LOCALAI_PORT="${AI_ENGINE_LOCALAI_PORT:-8081}"
+  export AI_ENGINE_LOCALAI_IMAGE="${AI_ENGINE_LOCALAI_IMAGE:-localai/localai:latest-aio-cpu}"
   export AI_ENGINE_LLAMA_SERVER_PORT="${AI_ENGINE_LLAMA_SERVER_PORT:-8082}"
   export AI_ENGINE_DEFAULT_MODEL="${AI_ENGINE_DEFAULT_MODEL:-tinyllama-1.1b-chat-v1.0}"
   export AI_ENGINE_DEFAULT_MODEL_URL="${AI_ENGINE_DEFAULT_MODEL_URL:-https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf}"
