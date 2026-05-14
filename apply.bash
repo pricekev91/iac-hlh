@@ -320,23 +320,19 @@ provision_engine_runtime() {
     local vmid="$1"
     local webui_port="$2"
     local localai_port="$3"
-    local llama_server_port="$4"
-    local default_model="$5"
-    local default_model_url="$6"
-    local pull_default_model="$7"
-    local llama_context_size="$8"
-    local llama_gpu_layers="$9"
-    local llama_threads="${10}"
-    local llama_batch_size="${11}"
-    local llama_parallel="${12}"
-    local llama_flash_attn="${13}"
-    local llama_no_mmap="${14}"
-    local llama_mlock="${15}"
-    local llama_moe_k="${16}"
-    local llama_moe_expert_offload="${17}"
-    local llama_cache_quant="${18}"
-    local llama_cache_type="${19}"
-    local llama_model_path="${20}"
+    local default_model="$4"
+    local default_model_url="$5"
+    local pull_default_model="$6"
+    local llama_context_size="$7"
+    local llama_gpu_layers="$8"
+    local llama_threads="$9"
+    local llama_batch_size="${10}"
+    local llama_parallel="${11}"
+    local llama_flash_attn="${12}"
+    local llama_no_mmap="${13}"
+    local llama_mlock="${14}"
+    local llama_cache_type="${15}"
+    local llama_model_path="${16}"
     local target_script="/root/provision-ai-appliance.bash"
     local provision_script="$SCRIPT_DIR/scripts/provision-ai-appliance.bash"
 
@@ -344,8 +340,8 @@ provision_engine_runtime() {
 
     if [[ "$MODE" == "plan" ]]; then
         printf '[plan] pct push %q %q %q --perms 0755\n' "$vmid" "$provision_script" "$target_script"
-        printf '[plan] pct exec %q -- env AI_ENGINE_WEBUI_PORT=%q AI_ENGINE_LOCALAI_PORT=%q AI_ENGINE_LLAMA_SERVER_PORT=%q AI_ENGINE_DEFAULT_MODEL=%q AI_ENGINE_DEFAULT_MODEL_URL=%q AI_ENGINE_DEFAULT_MODEL_PATH=%q AI_ENGINE_PULL_DEFAULT_MODEL=%q AI_ENGINE_LLAMA_CONTEXT_SIZE=%q AI_ENGINE_LLAMA_GPU_LAYERS=%q AI_ENGINE_LLAMA_THREADS=%q AI_ENGINE_LLAMA_BATCH_SIZE=%q AI_ENGINE_LLAMA_PARALLEL=%q AI_ENGINE_LLAMA_FLASH_ATTN=%q AI_ENGINE_LLAMA_NO_MMAP=%q AI_ENGINE_LLAMA_MLOCK=%q AI_ENGINE_LLAMA_MOE_K=%q AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD=%q AI_ENGINE_LLAMA_CACHE_QUANT=%q AI_ENGINE_LLAMA_CACHE_TYPE=%q %q\n' \
-            "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$default_model_url" "$llama_model_path" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$llama_batch_size" "$llama_parallel" "$llama_flash_attn" "$llama_no_mmap" "$llama_mlock" "$llama_moe_k" "$llama_moe_expert_offload" "$llama_cache_quant" "$llama_cache_type" "$target_script"
+        printf '[plan] pct exec %q -- env AI_ENGINE_WEBUI_PORT=%q AI_ENGINE_LOCALAI_PORT=%q AI_ENGINE_DEFAULT_MODEL=%q AI_ENGINE_DEFAULT_MODEL_URL=%q AI_ENGINE_DEFAULT_MODEL_PATH=%q AI_ENGINE_PULL_DEFAULT_MODEL=%q AI_ENGINE_LLAMA_CONTEXT_SIZE=%q AI_ENGINE_LLAMA_GPU_LAYERS=%q AI_ENGINE_LLAMA_THREADS=%q AI_ENGINE_LLAMA_BATCH_SIZE=%q AI_ENGINE_LLAMA_PARALLEL=%q AI_ENGINE_LLAMA_FLASH_ATTN=%q AI_ENGINE_LLAMA_NO_MMAP=%q AI_ENGINE_LLAMA_MLOCK=%q AI_ENGINE_LLAMA_CACHE_TYPE=%q %q\n' \
+            "$vmid" "$webui_port" "$localai_port" "$default_model" "$default_model_url" "$llama_model_path" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$llama_batch_size" "$llama_parallel" "$llama_flash_attn" "$llama_no_mmap" "$llama_mlock" "$llama_cache_type" "$target_script"
         return 0
     fi
 
@@ -353,7 +349,6 @@ provision_engine_runtime() {
     run_cmd pct exec "$vmid" -- env \
         AI_ENGINE_WEBUI_PORT="$webui_port" \
         AI_ENGINE_LOCALAI_PORT="$localai_port" \
-        AI_ENGINE_LLAMA_SERVER_PORT="$llama_server_port" \
         AI_ENGINE_DEFAULT_MODEL="$default_model" \
         AI_ENGINE_DEFAULT_MODEL_URL="$default_model_url" \
         AI_ENGINE_DEFAULT_MODEL_PATH="$llama_model_path" \
@@ -366,9 +361,6 @@ provision_engine_runtime() {
         AI_ENGINE_LLAMA_FLASH_ATTN="$llama_flash_attn" \
         AI_ENGINE_LLAMA_NO_MMAP="$llama_no_mmap" \
         AI_ENGINE_LLAMA_MLOCK="$llama_mlock" \
-        AI_ENGINE_LLAMA_MOE_K="$llama_moe_k" \
-        AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD="$llama_moe_expert_offload" \
-        AI_ENGINE_LLAMA_CACHE_QUANT="$llama_cache_quant" \
         AI_ENGINE_LLAMA_CACHE_TYPE="$llama_cache_type" \
         "$target_script"
 }
@@ -418,7 +410,6 @@ main() {
     local render_path
     local webui_port
     local localai_port
-    local llama_server_port
     local default_model
     local default_model_url
     local pull_default_model
@@ -430,9 +421,6 @@ main() {
     local llama_flash_attn
     local llama_no_mmap
     local llama_mlock
-    local llama_moe_k
-    local llama_moe_expert_offload
-    local llama_cache_quant
     local llama_cache_type
     local llama_model_path
 
@@ -479,7 +467,6 @@ main() {
     render_path="$(config_get engine.gpu.render /dev/dri/renderD128)"
     webui_port="$(config_get engine.webui_port 8080)"
     localai_port="$(config_get engine.localai_port 8081)"
-    llama_server_port="$(config_get engine.llama_server_port 8082)"
     default_model="$(config_get engine.default_model qwen2.5-coder:7b)"
     default_model_url="$(config_get engine.default_model_url '')"
     pull_default_model="$(config_get engine.pull_default_model false)"
@@ -491,9 +478,6 @@ main() {
     llama_flash_attn="$(config_get engine.llama_flash_attn false)"
     llama_no_mmap="$(config_get engine.llama_no_mmap false)"
     llama_mlock="$(config_get engine.llama_mlock false)"
-    llama_moe_k="$(config_get engine.llama_moe_k 0)"
-    llama_moe_expert_offload="$(config_get engine.llama_moe_expert_offload '')"
-    llama_cache_quant="$(config_get engine.llama_cache_quant 0)"
     llama_cache_type="$(config_get engine.llama_cache_type '')"
     llama_model_path="$(config_get engine.default_model_path /srv/ai/models/default.gguf)"
 
@@ -508,7 +492,7 @@ main() {
         fail "Legacy inventory keys detected (presentation.* or trashpanda_app.*). Remove those sections to use the single-engine stack."
     fi
 
-    ensure_engine_recreated_for_llama_stack "$vmid" "llama-stack" "$inventory_path"
+    ensure_engine_recreated_for_llama_stack "$vmid" "localai-stack" "$inventory_path"
 
     log "Reconciling shared AI engine LXC on HLH"
     ensure_container_base "engine" "$vmid" "$hostname" "$ostemplate" "$storage" "$rootfs_size_gb" "$bridge" "$ip_config" "$gateway" "$cores" "$memory_mb" "$swap_mb" "$unprivileged" "$onboot" "$tags" "$features" "$startup"
@@ -519,8 +503,8 @@ main() {
         run_cmd pct start "$vmid"
     fi
 
-    provision_engine_runtime "$vmid" "$webui_port" "$localai_port" "$llama_server_port" "$default_model" "$default_model_url" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$llama_batch_size" "$llama_parallel" "$llama_flash_attn" "$llama_no_mmap" "$llama_mlock" "$llama_moe_k" "$llama_moe_expert_offload" "$llama_cache_quant" "$llama_cache_type" "$llama_model_path"
-    log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname webui_port=$webui_port localai_port=$localai_port llama_server_port=$llama_server_port"
+    provision_engine_runtime "$vmid" "$webui_port" "$localai_port" "$default_model" "$default_model_url" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$llama_batch_size" "$llama_parallel" "$llama_flash_attn" "$llama_no_mmap" "$llama_mlock" "$llama_cache_type" "$llama_model_path"
+    log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname webui_port=$webui_port localai_port=$localai_port"
 }
 
 main "$@"

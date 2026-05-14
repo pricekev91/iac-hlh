@@ -38,22 +38,26 @@ Current scope:
 - bridged network attachment
 - mounted host paths for models, state, and scratch data
 - optional `/dev/dri` passthrough for AMD iGPU-backed inference
-- in-container provisioning for one local AI stack: `llama.cpp` server, `LocalAI`, and `llama.cpp Web UI`
-- `llama.cpp` server listens on localhost only and is proxied through the Web UI layer
+- in-container provisioning for LocalAI with its built-in llama-cpp gRPC backend
+- LocalAI owns model loading, inference, and the OpenAI-compatible API
+- per-model YAML configs in `/srv/ai/models/` expose full llama.cpp flags (context, cache type, flash attention, mlock, threads, etc.)
+- nginx on port `8080` proxies the LocalAI UI and API
 - host-side AMD iGPU rebinding workflow for HLH when Proxmox is still binding the device to `vfio-pci`
 
 Out of scope for this slice:
 
+- standalone `llama-server` (removed; LocalAI's llama-cpp backend replaces it)
 - application-specific Docker stacks
 - orchestrator and agents LXCs
 
 ## Appliance Contract
 
-The shared appliance should continue presenting a stable local contract to consuming applications:
+The shared appliance presents a stable local contract to consuming applications:
 
-- `llama.cpp Web UI` on port `8080`
-- `LocalAI` API on port `8081`
-- `llama.cpp` server on port `8082` internally only
+- `LocalAI` UI and API on port `8080` (via nginx proxy) and port `8081` (direct)
+- OpenAI-compatible API at `http://192.168.6.252:8081/v1/`
 - application-agnostic host mounts and runtime wiring
+
+Model configuration is fully declarative: each GGUF model in `/srv/ai/models/` has a matching `.yaml` config that controls all inference parameters. No SSH required to change model flags — edit the YAML and restart LocalAI.
 
 This repo owns how the appliance runs on HLH. Consuming application repos own how they use it.

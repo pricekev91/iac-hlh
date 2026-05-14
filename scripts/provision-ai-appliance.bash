@@ -20,11 +20,11 @@ require_root() {
 install_base_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y ca-certificates curl jq git cmake ninja-build build-essential pkg-config libvulkan-dev vulkan-tools glslc spirv-headers docker.io docker-compose-v2 nginx gettext-base
+  apt-get install -y ca-certificates curl jq docker.io docker-compose-v2 nginx gettext-base
 }
 
 write_runtime_contract() {
-  install -d -m 0755 /etc/ai-engine /srv/ai/models /srv/ai/state /srv/ai/scratch /srv/ai/state/localai /srv/ai/state/localai/models /opt/ai-engine/web
+  install -d -m 0755 /etc/ai-engine /srv/ai/models /srv/ai/state /srv/ai/scratch /srv/ai/state/localai /opt/ai-engine/web
 
   cat >/etc/ai-engine/runtime.env <<EOF
 AI_ENGINE_WEBUI_HOST=0.0.0.0
@@ -32,8 +32,6 @@ AI_ENGINE_WEBUI_PORT=${AI_ENGINE_WEBUI_PORT}
 AI_ENGINE_LOCALAI_HOST=0.0.0.0
 AI_ENGINE_LOCALAI_PORT=${AI_ENGINE_LOCALAI_PORT}
 AI_ENGINE_LOCALAI_IMAGE=${AI_ENGINE_LOCALAI_IMAGE}
-AI_ENGINE_LLAMA_SERVER_HOST=127.0.0.1
-AI_ENGINE_LLAMA_SERVER_PORT=${AI_ENGINE_LLAMA_SERVER_PORT}
 AI_ENGINE_DEFAULT_MODEL=${AI_ENGINE_DEFAULT_MODEL}
 AI_ENGINE_DEFAULT_MODEL_URL=${AI_ENGINE_DEFAULT_MODEL_URL}
 AI_ENGINE_DEFAULT_MODEL_PATH=${AI_ENGINE_DEFAULT_MODEL_PATH}
@@ -46,9 +44,6 @@ AI_ENGINE_LLAMA_PARALLEL=${AI_ENGINE_LLAMA_PARALLEL}
 AI_ENGINE_LLAMA_FLASH_ATTN=${AI_ENGINE_LLAMA_FLASH_ATTN}
 AI_ENGINE_LLAMA_NO_MMAP=${AI_ENGINE_LLAMA_NO_MMAP}
 AI_ENGINE_LLAMA_MLOCK=${AI_ENGINE_LLAMA_MLOCK}
-AI_ENGINE_LLAMA_MOE_K=${AI_ENGINE_LLAMA_MOE_K}
-AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD=${AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD}
-AI_ENGINE_LLAMA_CACHE_QUANT=${AI_ENGINE_LLAMA_CACHE_QUANT}
 AI_ENGINE_LLAMA_CACHE_TYPE=${AI_ENGINE_LLAMA_CACHE_TYPE}
 EOF
 
@@ -64,7 +59,6 @@ cat <<STATUS
 webui_port=${AI_ENGINE_WEBUI_PORT:-unknown}
 localai_port=${AI_ENGINE_LOCALAI_PORT:-unknown}
 localai_image=${AI_ENGINE_LOCALAI_IMAGE:-unknown}
-llama_server_port=${AI_ENGINE_LLAMA_SERVER_PORT:-unknown}
 default_model=${AI_ENGINE_DEFAULT_MODEL:-unknown}
 default_model_url=${AI_ENGINE_DEFAULT_MODEL_URL:-unknown}
 default_model_path=${AI_ENGINE_DEFAULT_MODEL_PATH:-unknown}
@@ -77,35 +71,68 @@ EOF
   chmod 0755 /usr/local/bin/ai-engine-status
 }
 
-install_llama_cpp_server() {
-  local src_root="/opt/llama.cpp"
-  local build_root="${src_root}/build"
+write_localai_model_config() {
+  install -d -m 0755 /srv/ai/models
 
-  if [[ ! -d "$src_root/.git" ]]; then
-    git clone --depth 1 https://github.com/ggml-org/llama.cpp "$src_root"
-  else
-    git -C "$src_root" fetch --depth 1 origin
-    git -C "$src_root" reset --hard origin/master
+  local model_file
+  local mmproj_file
+  local mmproj_dir
+  local model_config_path
+
+  # Strip /srv/ai/models/ prefix so LocalAI resolves the path relative to its mounted /build/models dir
+  model_file="${AI_ENGINE_DEFAULT_MODEL_PATH#/srv/ai/models/}"
+  model_config_path="/srv/ai/models/${AI_ENGINE_DEFAULT_MODEL}.yaml"
+
+  # Auto-detect mmproj: look for a gguf in the sibling mmproj/ directory relative to the model.
+  # e.g. model at llama-cpp/models/Foo-GGUF/foo.gguf -> check llama-cpp/mmproj/Foo-GGUF/mmproj.gguf
+  mmproj_file=""
+  local model_dir
+  model_dir="$(dirname "${AI_ENGINE_DEFAULT_MODEL_PATH}")"
+  local model_parent_name
+  model_parent_name="$(basename "$model_dir")"
+  local models_root
+  models_root="$(dirname "$(dirname "$model_dir")")"
+  local mmproj_candidate
+  mmproj_candidate="${models_root}/mmproj/${model_parent_name}/mmproj.gguf"
+  if [[ -f "$mmproj_candidate" ]]; then
+    mmproj_file="${mmproj_candidate#/srv/ai/models/}"
   fi
 
-  # Clean stale build cache to avoid cmake re-using invalid cached paths
-  rm -rf "$build_root"
+  # Build optional YAML fields
+  local mmproj_line=""
+  [[ -n "$mmproj_file" ]] && mmproj_line="  mmproj: ${mmproj_file}"
 
-  cmake -S "$src_root" -B "$build_root" -G Ninja -DGGML_VULKAN=ON -DLLAMA_BUILD_SERVER=ON -DCMAKE_BUILD_TYPE=Release
-  cmake --build "$build_root" --target llama-server -j"$(nproc)"
+  local flash_attn_line=""
+  [[ "${AI_ENGINE_LLAMA_FLASH_ATTN,,}" == "true" ]] && flash_attn_line="f16: true"
 
-  if [[ -x "$build_root/bin/llama-server" ]]; then
-    install -m 0755 "$build_root/bin/llama-server" /usr/local/bin/llama-server
-    return 0
-  fi
+  local no_mmap_line=""
+  [[ "${AI_ENGINE_LLAMA_NO_MMAP,,}" == "true" ]] && no_mmap_line="mmap: false"
 
-  if [[ -x "$build_root/bin/server" ]]; then
-    install -m 0755 "$build_root/bin/server" /usr/local/bin/llama-server
-    return 0
-  fi
+  local mlock_line=""
+  [[ "${AI_ENGINE_LLAMA_MLOCK,,}" == "true" ]] && mlock_line="mlock: true"
 
-  fail "Unable to find built llama.cpp server binary"
+  local cache_type_line=""
+  [[ -n "${AI_ENGINE_LLAMA_CACHE_TYPE:-}" ]] && cache_type_line="cache_type_k: ${AI_ENGINE_LLAMA_CACHE_TYPE}"
+
+  cat >"${model_config_path}" <<EOF
+name: ${AI_ENGINE_DEFAULT_MODEL}
+backend: llama-cpp
+parameters:
+  model: ${model_file}
+${mmproj_line:+${mmproj_line}\n}context_size: ${AI_ENGINE_LLAMA_CONTEXT_SIZE}
+threads: ${AI_ENGINE_LLAMA_THREADS}
+f16: true
+gpu_layers: ${AI_ENGINE_LLAMA_GPU_LAYERS}
+n_batch: ${AI_ENGINE_LLAMA_BATCH_SIZE}
+${flash_attn_line:+${flash_attn_line}\n}${no_mmap_line:+${no_mmap_line}\n}${mlock_line:+${mlock_line}\n}${cache_type_line:+${cache_type_line}\n}options:
+  - use_jinja:true
+known_usecases:
+  - chat
+  - completion
+EOF
 }
+
+
 
 write_nginx_config() {
   cat >/etc/nginx/sites-available/ai-engine-webui.conf <<'EOF'
@@ -113,102 +140,27 @@ server {
   listen ${AI_ENGINE_WEBUI_PORT};
   server_name _;
 
-  # Serve the official llama.cpp Svelte WebUI from llama-server.
+  # Proxy all traffic to LocalAI (API + built-in WebUI).
   location / {
-    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  }
-
-  # Endpoints used by llama.cpp WebUI.
-  location /v1/ {
-    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/v1/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  }
-
-  location /props {
-    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/props;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  }
-
-  location /slots {
-    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/slots;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  }
-
-  location /models {
-    proxy_pass http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/models;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  }
-
-  # Optional LocalAI passthrough for model management APIs.
-  location /localai/ {
     proxy_pass http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
   }
 }
 EOF
 
-  envsubst '${AI_ENGINE_WEBUI_PORT} ${AI_ENGINE_LOCALAI_PORT} ${AI_ENGINE_LLAMA_SERVER_PORT}' < /etc/nginx/sites-available/ai-engine-webui.conf > /etc/nginx/sites-available/ai-engine-webui.resolved.conf
+  envsubst '${AI_ENGINE_WEBUI_PORT} ${AI_ENGINE_LOCALAI_PORT}' < /etc/nginx/sites-available/ai-engine-webui.conf > /etc/nginx/sites-available/ai-engine-webui.resolved.conf
   mv /etc/nginx/sites-available/ai-engine-webui.resolved.conf /etc/nginx/sites-available/ai-engine-webui.conf
   ln -sf /etc/nginx/sites-available/ai-engine-webui.conf /etc/nginx/sites-enabled/ai-engine-webui.conf
   rm -f /etc/nginx/sites-enabled/default
 }
 
-write_llama_server_wrapper() {
-  cat >/usr/local/bin/ai-engine-llama-server <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
 
-. /etc/ai-engine/runtime.env
-
-model_path="${AI_ENGINE_DEFAULT_MODEL_PATH}"
-if [[ ! -f "$model_path" ]]; then
-  candidate="$(find /srv/ai/models -type f \( -name '*.gguf' -o -name '*.GGUF' \) | head -n 1 || true)"
-  if [[ -n "$candidate" ]]; then
-    model_path="$candidate"
-  fi
-fi
-
-if [[ ! -f "$model_path" ]]; then
-  echo "No GGUF model found at ${AI_ENGINE_DEFAULT_MODEL_PATH} or /srv/ai/models; llama.cpp server not started" >&2
-  exit 0
-fi
-
-extra_args=()
-[[ "${AI_ENGINE_LLAMA_FLASH_ATTN,,}" == "true" ]] && extra_args+=(--flash-attn on)
-[[ "${AI_ENGINE_LLAMA_NO_MMAP,,}" == "true" ]] && extra_args+=(--no-mmap)
-[[ "${AI_ENGINE_LLAMA_MLOCK,,}" == "true" ]] && extra_args+=(--mlock)
-[[ -n "${AI_ENGINE_LLAMA_MOE_K:-}" && "${AI_ENGINE_LLAMA_MOE_K}" != "0" ]] && extra_args+=(--n-cpu-moe "${AI_ENGINE_LLAMA_MOE_K}")
-[[ -n "${AI_ENGINE_LLAMA_MOE_EXPERT_OFFLOAD:-}" ]] && extra_args+=(--cpu-moe)
-[[ -n "${AI_ENGINE_LLAMA_CACHE_QUANT:-}" && "${AI_ENGINE_LLAMA_CACHE_QUANT}" != "0" ]] && true  # --cache-quant not supported; skipped
-[[ -n "${AI_ENGINE_LLAMA_CACHE_TYPE:-}" ]] && extra_args+=(--cache-type-k "${AI_ENGINE_LLAMA_CACHE_TYPE}")
-
-exec /usr/local/bin/llama-server \
-  --host "${AI_ENGINE_LLAMA_SERVER_HOST}" \
-  --port "${AI_ENGINE_LLAMA_SERVER_PORT}" \
-  --model "$model_path" \
-  --ctx-size "${AI_ENGINE_LLAMA_CONTEXT_SIZE}" \
-  --batch-size "${AI_ENGINE_LLAMA_BATCH_SIZE:-512}" \
-  --gpu-layers "${AI_ENGINE_LLAMA_GPU_LAYERS}" \
-  --threads "${AI_ENGINE_LLAMA_THREADS}" \
-  --parallel "${AI_ENGINE_LLAMA_PARALLEL:-1}" \
-  "${extra_args[@]}"
-EOF
-
-  chmod 0755 /usr/local/bin/ai-engine-llama-server
-}
 
 write_localai_wrapper() {
   cat >/usr/local/bin/ai-engine-localai-start <<'EOF'
@@ -217,33 +169,12 @@ set -euo pipefail
 
 . /etc/ai-engine/runtime.env
 
-max_attempts=25
-delay=2
-
-for attempt in $(seq 1 "$max_attempts"); do
-  if curl -fsS --connect-timeout 2 --max-time 5 "http://${AI_ENGINE_LLAMA_SERVER_HOST}:${AI_ENGINE_LLAMA_SERVER_PORT}/health" >/dev/null 2>&1; then
-    break
-  fi
-
-  if [[ "$attempt" -eq "$max_attempts" ]]; then
-    echo "llama.cpp endpoint did not become reachable at ${AI_ENGINE_LLAMA_SERVER_HOST}:${AI_ENGINE_LLAMA_SERVER_PORT}" >&2
-    exit 1
-  fi
-
-  sleep "$delay"
-  if [[ "$delay" -lt 20 ]]; then
-    delay=$((delay * 2))
-    if [[ "$delay" -gt 20 ]]; then
-      delay=20
-    fi
-  fi
-done
-
 exec /usr/bin/docker run --rm --name ai-engine-localai \
   --security-opt apparmor=unconfined \
   -p "${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080" \
-  -v /srv/ai/state/localai/models:/models \
+  -v /srv/ai/models:/build/models \
   -v /srv/ai/state/localai:/tmp/localai \
+  -e LLAMACPP_PARALLEL="${AI_ENGINE_LLAMA_PARALLEL:-1}" \
   "${AI_ENGINE_LOCALAI_IMAGE}"
 EOF
 
@@ -253,10 +184,9 @@ EOF
 write_services() {
   cat >/etc/systemd/system/ai-engine-localai.service <<'EOF'
 [Unit]
-Description=AI Engine LocalAI API (middleware)
-After=network-online.target docker.service ai-engine-llama-server.service
-Wants=network-online.target docker.service ai-engine-llama-server.service
-Requires=ai-engine-llama-server.service
+Description=AI Engine LocalAI (llama-cpp backend)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=simple
@@ -271,33 +201,14 @@ RestartSec=2
 WantedBy=multi-user.target
 EOF
 
-  cat >/etc/systemd/system/ai-engine-llama-server.service <<'EOF'
-[Unit]
-Description=AI Engine llama.cpp server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-EnvironmentFile=/etc/ai-engine/runtime.env
-ExecStart=/usr/local/bin/ai-engine-llama-server
-Restart=always
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
   systemctl daemon-reload
   systemctl enable docker
   systemctl restart docker
   systemctl enable nginx
   systemctl enable ai-engine-localai.service
-  systemctl enable ai-engine-llama-server.service
 }
 
 start_services() {
-  systemctl restart ai-engine-llama-server.service || true
   systemctl restart ai-engine-localai.service
   systemctl restart nginx
 }
@@ -326,8 +237,6 @@ pull_default_model_if_requested() {
     chmod 0644 "${AI_ENGINE_DEFAULT_MODEL_PATH}"
 
     systemctl restart ai-engine-localai.service
-    systemctl reset-failed ai-engine-llama-server.service || true
-    systemctl restart ai-engine-llama-server.service || true
     return 0
   fi
 
@@ -341,32 +250,11 @@ verify_endpoints() {
   local attempt
   local status
 
-  for attempt in $(seq 1 40); do
-    if curl -fsS "http://127.0.0.1:${AI_ENGINE_WEBUI_PORT}/" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 2
-  done
-
   for attempt in $(seq 1 120); do
-    if ! curl -fsS --connect-timeout 2 --max-time 5 "http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/health" >/dev/null 2>&1; then
-      sleep 2
-      continue
-    fi
-
-    # Some LocalAI images do not expose /readyz. Treat any HTTP response from
-    # a core API path as ready, as long as the endpoint is reachable and
-    # llama.cpp is already reachable.
-    status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/v1/models" || true)"
-    if [[ "$status" != "000" ]]; then
-      return 0
-    fi
-
     status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/readyz" || true)"
-    if [[ "$status" != "000" ]]; then
+    if [[ "$status" == "200" ]]; then
       return 0
     fi
-
     sleep 2
   done
 
@@ -379,7 +267,6 @@ main() {
   export AI_ENGINE_WEBUI_PORT="${AI_ENGINE_WEBUI_PORT:-8080}"
   export AI_ENGINE_LOCALAI_PORT="${AI_ENGINE_LOCALAI_PORT:-8081}"
   export AI_ENGINE_LOCALAI_IMAGE="${AI_ENGINE_LOCALAI_IMAGE:-localai/localai:latest-cpu}"
-  export AI_ENGINE_LLAMA_SERVER_PORT="${AI_ENGINE_LLAMA_SERVER_PORT:-8082}"
   export AI_ENGINE_DEFAULT_MODEL="${AI_ENGINE_DEFAULT_MODEL:-tinyllama-1.1b-chat-v1.0}"
   export AI_ENGINE_DEFAULT_MODEL_URL="${AI_ENGINE_DEFAULT_MODEL_URL:-https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf}"
   export AI_ENGINE_DEFAULT_MODEL_PATH="${AI_ENGINE_DEFAULT_MODEL_PATH:-/srv/ai/models/default.gguf}"
@@ -394,12 +281,11 @@ main() {
   log "Writing AI engine runtime contract"
   write_runtime_contract
 
-  log "Building llama.cpp server with Vulkan"
-  install_llama_cpp_server
+  log "Writing LocalAI model config"
+  write_localai_model_config
 
-  log "Writing web UI and service definitions"
+  log "Writing nginx config and service definitions"
   write_nginx_config
-  write_llama_server_wrapper
   write_localai_wrapper
   write_services
 
@@ -408,7 +294,7 @@ main() {
 
   pull_default_model_if_requested
 
-  log "Verifying web UI and LocalAI API"
+  log "Verifying LocalAI API"
   verify_endpoints
 
   log "Provisioning complete"

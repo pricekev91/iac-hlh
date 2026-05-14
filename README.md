@@ -66,14 +66,14 @@ The current reconciled runtime is one shared `engine` LXC.
 
 Inside `engine`, apply provisions:
 
-- `llama.cpp` server on port `8082` bound to localhost only (internal inference engine)
-- `LocalAI` API on port `8081` (model lifecycle + API middleware)
-- `llama.cpp Web UI` on port `8080` (frontend)
+- `LocalAI` on port `8081` with its built-in llama-cpp gRPC backend (model loading + OpenAI-compatible API)
+- `nginx` on port `8080` proxying the LocalAI UI and API
+- per-model YAML configs in `/srv/ai/models/` for full llama.cpp flag control
 
-- `./apply.bash --plan inventory/hlh-prod.yaml` validates the inventory and prints the Proxmox reconciliation plan.
-- `./apply.bash inventory/hlh-prod.yaml` reconciles the shared AI appliance LXC on HLH.
+`./apply.bash --plan inventory/hlh-prod.yaml` validates the inventory and prints the Proxmox reconciliation plan.
+`./apply.bash inventory/hlh-prod.yaml` reconciles the shared AI appliance LXC on HLH.
 
-Legacy engine containers from pre-llama-stack runs are blocked with a clear recreate-required error. Recreate once, then normal reconciliation continues.
+Legacy engine containers from pre-localai-stack runs are blocked with a clear recreate-required error. Recreate once, then normal reconciliation continues.
 
 ## Additional Contracts
 
