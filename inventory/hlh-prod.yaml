@@ -20,7 +20,6 @@ engine:
   ipv4: 192.168.6.252/22
   rootfs_size_gb: 250
   enable_gpu: true
-  localai_image: localai/localai:latest
   default_model: qwopus3.6-35b-a3b-v1
   default_model_url: ""
   default_model_path: /srv/ai/models/llama-cpp/models/Qwopus3.6-35B-A3B-v1-GGUF/Qwopus3.6-35B-A3B-v1-Q4_K_M.gguf

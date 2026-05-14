@@ -77,7 +77,7 @@ The current reconciled runtime is one shared `engine` LXC.
 - Provisioning script is pushed into the container
 
 **Application layer** (`provision-ai-appliance.bash`) configures inside `engine`:
-- `LocalAI` on port `8081` with its built-in llama-cpp gRPC backend (model loading + OpenAI-compatible API)
+- native `LocalAI` on port `8081` with its built-in llama-cpp backend (model loading + OpenAI-compatible API)
 - `nginx` on port `8080` proxying the LocalAI UI and API
 - per-model YAML configs in `/srv/ai/models/` for full llama.cpp flag control
 

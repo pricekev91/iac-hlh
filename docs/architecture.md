@@ -40,8 +40,8 @@ The provisioning system has two distinct layers:
 - Orchestrates the application layer via `pct exec`
 
 **Layer 2: Application (provision-ai-appliance.bash)** — Runs inside the LXC container
-- Installs OS packages (Docker, nginx, systemd)
-- Configures application services (LocalAI, nginx proxying)
+- Installs OS packages and LocalAI native binary (nginx, systemd)
+- Configures native LocalAI service and nginx proxying
 - Generates config files and model YAML definitions
 - Starts services and verifies endpoints
 
@@ -57,7 +57,7 @@ Current scope:
 - bridged network attachment
 - mounted host paths for models, state, and scratch data
 - optional `/dev/dri` passthrough for AMD iGPU-backed inference
-- in-container provisioning for LocalAI with its built-in llama-cpp gRPC backend
+- in-container provisioning for native LocalAI (no Docker runtime layer)
 - LocalAI owns model loading, inference, and the OpenAI-compatible API
 - per-model YAML configs in `/srv/ai/models/` expose full llama.cpp flags (context, cache type, flash attention, mlock, threads, etc.)
 - nginx on port `8080` proxies the LocalAI UI and API

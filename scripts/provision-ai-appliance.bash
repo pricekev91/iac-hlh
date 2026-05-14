@@ -20,7 +20,25 @@ require_root() {
 install_base_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y ca-certificates curl jq docker.io docker-compose-v2 nginx gettext-base
+  apt-get install -y ca-certificates curl jq nginx gettext-base tar
+}
+
+install_localai_binary() {
+  if command -v local-ai >/dev/null 2>&1; then
+    log "LocalAI binary already present: $(command -v local-ai)"
+    return 0
+  fi
+
+  local os arch url
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  url="https://github.com/mudler/LocalAI/releases/latest/download/local-ai-${os}-${arch}"
+
+  log "Downloading LocalAI binary from ${url}"
+  curl -fsSL -o /usr/local/bin/local-ai "${url}" || fail "Failed to download LocalAI binary for ${os}/${arch}"
+  chmod 0755 /usr/local/bin/local-ai
+
+  /usr/local/bin/local-ai --help >/dev/null 2>&1 || fail "Downloaded LocalAI binary is not executable"
 }
 
 write_runtime_contract() {
@@ -31,7 +49,6 @@ AI_ENGINE_WEBUI_HOST=0.0.0.0
 AI_ENGINE_WEBUI_PORT=${AI_ENGINE_WEBUI_PORT}
 AI_ENGINE_LOCALAI_HOST=0.0.0.0
 AI_ENGINE_LOCALAI_PORT=${AI_ENGINE_LOCALAI_PORT}
-AI_ENGINE_LOCALAI_IMAGE=${AI_ENGINE_LOCALAI_IMAGE}
 AI_ENGINE_DEFAULT_MODEL=${AI_ENGINE_DEFAULT_MODEL}
 AI_ENGINE_DEFAULT_MODEL_URL=${AI_ENGINE_DEFAULT_MODEL_URL}
 AI_ENGINE_DEFAULT_MODEL_PATH=${AI_ENGINE_DEFAULT_MODEL_PATH}
@@ -58,7 +75,6 @@ fi
 cat <<STATUS
 webui_port=${AI_ENGINE_WEBUI_PORT:-unknown}
 localai_port=${AI_ENGINE_LOCALAI_PORT:-unknown}
-localai_image=${AI_ENGINE_LOCALAI_IMAGE:-unknown}
 default_model=${AI_ENGINE_DEFAULT_MODEL:-unknown}
 default_model_url=${AI_ENGINE_DEFAULT_MODEL_URL:-unknown}
 default_model_path=${AI_ENGINE_DEFAULT_MODEL_PATH:-unknown}
@@ -78,9 +94,8 @@ write_localai_model_config() {
   local mmproj_file
   local model_config_path
 
-  # Use absolute paths within the container's mount point so LocalAI can resolve them directly
-  # LocalAI mounts host /srv/ai/models at container /build/models
-  model_file="/build/models${AI_ENGINE_DEFAULT_MODEL_PATH#/srv/ai/models}"
+  # Native LocalAI runs inside the LXC, so model paths resolve directly on /srv/ai/models.
+  model_file="${AI_ENGINE_DEFAULT_MODEL_PATH}"
   model_config_path="/srv/ai/models/${AI_ENGINE_DEFAULT_MODEL}.yaml"
 
   # Auto-detect mmproj: look for a gguf in the sibling mmproj/ directory relative to the model.
@@ -95,8 +110,7 @@ write_localai_model_config() {
   local mmproj_candidate
   mmproj_candidate="${models_root}/mmproj/${model_parent_name}/mmproj.gguf"
   if [[ -f "$mmproj_candidate" ]]; then
-    # Use absolute path for mmproj too
-    mmproj_file="/build/models${mmproj_candidate#/srv/ai/models}"
+    mmproj_file="${mmproj_candidate}"
   fi
 
   # Write YAML using explicit conditionals to avoid heredoc newline escaping issues
@@ -161,26 +175,17 @@ set -euo pipefail
 
 . /etc/ai-engine/runtime.env
 
-# Build docker run command with optional GPU device passthrough
-local docker_run_args=(
-  --rm
-  --name ai-engine-localai
-  --security-opt apparmor=unconfined
-  -p "${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080"
-  -v /srv/ai/models:/build/models
-  -v /srv/ai/state/localai:/tmp/localai
-  -e LLAMACPP_PARALLEL="${AI_ENGINE_LLAMA_PARALLEL:-1}"
-)
+install -d -m 0755 /srv/ai/state/localai/data /srv/ai/state/localai/backends
+export LLAMACPP_PARALLEL="${AI_ENGINE_LLAMA_PARALLEL:-1}"
 
-# Pass GPU devices if available
-if [[ -e /dev/dri/card0 ]]; then
-  docker_run_args+=(--device /dev/dri/card0:/dev/dri/card0)
-fi
-if [[ -e /dev/dri/renderD128 ]]; then
-  docker_run_args+=(--device /dev/dri/renderD128:/dev/dri/renderD128)
-fi
-
-exec /usr/bin/docker run "${docker_run_args[@]}" "${AI_ENGINE_LOCALAI_IMAGE}"
+exec /usr/local/bin/local-ai run \
+  --address "${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}" \
+  --models-path /srv/ai/models \
+  --data-path /srv/ai/state/localai/data \
+  --backends-path /srv/ai/state/localai/backends \
+  --threads "${AI_ENGINE_LLAMA_THREADS}" \
+  --context-size "${AI_ENGINE_LLAMA_CONTEXT_SIZE}" \
+  --f16
 EOF
 
   chmod 0755 /usr/local/bin/ai-engine-localai-start
@@ -190,15 +195,13 @@ write_services() {
   cat >/etc/systemd/system/ai-engine-localai.service <<'EOF'
 [Unit]
 Description=AI Engine LocalAI (llama-cpp backend)
-After=network-online.target docker.service
-Wants=network-online.target docker.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 EnvironmentFile=/etc/ai-engine/runtime.env
-ExecStartPre=-/usr/bin/docker rm -f ai-engine-localai
 ExecStart=/usr/local/bin/ai-engine-localai-start
-ExecStop=/usr/bin/docker stop ai-engine-localai
 Restart=always
 RestartSec=2
 
@@ -207,8 +210,6 @@ WantedBy=multi-user.target
 EOF
 
   systemctl daemon-reload
-  systemctl enable docker
-  systemctl restart docker
   systemctl enable nginx
   systemctl enable ai-engine-localai.service
 }
@@ -271,7 +272,6 @@ main() {
 
   export AI_ENGINE_WEBUI_PORT="${AI_ENGINE_WEBUI_PORT:-8080}"
   export AI_ENGINE_LOCALAI_PORT="${AI_ENGINE_LOCALAI_PORT:-8081}"
-  export AI_ENGINE_LOCALAI_IMAGE="${AI_ENGINE_LOCALAI_IMAGE:-localai/localai:latest-cpu}"
   export AI_ENGINE_DEFAULT_MODEL="${AI_ENGINE_DEFAULT_MODEL:-tinyllama-1.1b-chat-v1.0}"
   export AI_ENGINE_DEFAULT_MODEL_URL="${AI_ENGINE_DEFAULT_MODEL_URL:-https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf}"
   export AI_ENGINE_DEFAULT_MODEL_PATH="${AI_ENGINE_DEFAULT_MODEL_PATH:-/srv/ai/models/default.gguf}"
@@ -282,6 +282,9 @@ main() {
 
   log "Installing baseline packages"
   install_base_packages
+
+  log "Installing LocalAI binary"
+  install_localai_binary
 
   log "Writing AI engine runtime contract"
   write_runtime_contract
