@@ -24,8 +24,8 @@ install_base_packages() {
 }
 
 install_localai_binary() {
-  if command -v local-ai >/dev/null 2>&1; then
-    log "LocalAI binary already present: $(command -v local-ai)"
+  if [[ -x /usr/local/bin/local-ai ]]; then
+    log "LocalAI binary already present: /usr/local/bin/local-ai"
     return 0
   fi
 
