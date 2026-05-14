@@ -106,8 +106,8 @@ write_localai_model_config() {
   local mmproj_file
   local model_config_path
 
-  # Native LocalAI runs inside the LXC, so model paths resolve directly on /srv/ai/models.
-  model_file="${AI_ENGINE_DEFAULT_MODEL_PATH}"
+  # LocalAI validates model files under models-path, so keep YAML paths relative to /srv/ai/models.
+  model_file="${AI_ENGINE_DEFAULT_MODEL_PATH#/srv/ai/models/}"
   model_config_path="/srv/ai/models/${AI_ENGINE_DEFAULT_MODEL}.yaml"
 
   # Auto-detect mmproj: look for a gguf in the sibling mmproj/ directory relative to the model.
@@ -122,7 +122,7 @@ write_localai_model_config() {
   local mmproj_candidate
   mmproj_candidate="${models_root}/mmproj/${model_parent_name}/mmproj.gguf"
   if [[ -f "$mmproj_candidate" ]]; then
-    mmproj_file="${mmproj_candidate}"
+    mmproj_file="${mmproj_candidate#/srv/ai/models/}"
   fi
 
   # Write YAML using explicit conditionals to avoid heredoc newline escaping issues
