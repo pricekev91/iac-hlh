@@ -304,6 +304,7 @@ pull_default_model_if_requested() {
 
 verify_endpoints() {
   local attempt
+  local status
 
   for attempt in $(seq 1 40); do
     if curl -fsS "http://127.0.0.1:${AI_ENGINE_WEBUI_PORT}/" >/dev/null 2>&1; then
@@ -313,9 +314,18 @@ verify_endpoints() {
   done
 
   for attempt in $(seq 1 40); do
-    if curl -fsS "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/readyz" >/dev/null 2>&1; then
+    # Some LocalAI images do not expose /readyz. Treat any HTTP response from
+    # a core API path as ready, as long as the endpoint is reachable.
+    status="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/v1/models" || true)"
+    if [[ "$status" != "000" ]]; then
       return 0
     fi
+
+    status="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/readyz" || true)"
+    if [[ "$status" != "000" ]]; then
+      return 0
+    fi
+
     sleep 2
   done
 
