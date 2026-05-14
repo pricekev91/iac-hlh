@@ -24,7 +24,7 @@ install_base_packages() {
 }
 
 write_runtime_contract() {
-  install -d -m 0755 /etc/ai-engine /srv/ai/models /srv/ai/state /srv/ai/scratch /srv/ai/state/localai /opt/ai-engine/web
+  install -d -m 0755 /etc/ai-engine /srv/ai/models /srv/ai/state /srv/ai/scratch /srv/ai/state/localai /srv/ai/state/localai/models /opt/ai-engine/web
 
   cat >/etc/ai-engine/runtime.env <<EOF
 AI_ENGINE_WEBUI_HOST=0.0.0.0
@@ -224,7 +224,7 @@ ExecStartPre=-/usr/bin/docker rm -f ai-engine-localai
 ExecStart=/usr/bin/docker run --rm --name ai-engine-localai \
   --security-opt apparmor=unconfined \
   -p ${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080 \
-  -v /srv/ai/models:/models \
+  -v /srv/ai/state/localai/models:/models \
   -v /srv/ai/state/localai:/tmp/localai \
   ${AI_ENGINE_LOCALAI_IMAGE}
 ExecStop=/usr/bin/docker stop ai-engine-localai
@@ -313,15 +313,15 @@ verify_endpoints() {
     sleep 2
   done
 
-  for attempt in $(seq 1 40); do
+  for attempt in $(seq 1 120); do
     # Some LocalAI images do not expose /readyz. Treat any HTTP response from
     # a core API path as ready, as long as the endpoint is reachable.
-    status="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/v1/models" || true)"
+    status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/v1/models" || true)"
     if [[ "$status" != "000" ]]; then
       return 0
     fi
 
-    status="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/readyz" || true)"
+    status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/readyz" || true)"
     if [[ "$status" != "000" ]]; then
       return 0
     fi
