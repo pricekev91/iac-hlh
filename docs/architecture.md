@@ -22,11 +22,30 @@ iac-hlh/
 └── zfsbootstrap.sh
 ```
 
-- `apply.bash` is the operator entrypoint for Proxmox reconciliation
+- `apply.bash` is the operator entrypoint for Proxmox reconciliation (runs on Proxmox host)
 - `inventory/` contains HLH-specific host values
 - `platforms/` contains reusable runtime definitions such as the shared `engine` appliance
-- `scripts/` contains in-container provisioning logic
+- `scripts/provision-ai-appliance.bash` contains in-container provisioning logic (runs inside LXC)
 - `bootstrap/` contains host preparation scripts
+
+## Two-Layer Architecture
+
+The provisioning system has two distinct layers:
+
+**Layer 1: Virtualization (apply.bash)** — Runs on the Proxmox host
+- Parses inventory YAML files to determine desired state
+- Creates/destroys/modifies LXC containers (CPU, memory, networking)
+- Manages bind mounts and host storage attachment
+- Pushes provisioning scripts into containers
+- Orchestrates the application layer via `pct exec`
+
+**Layer 2: Application (provision-ai-appliance.bash)** — Runs inside the LXC container
+- Installs OS packages (Docker, nginx, systemd)
+- Configures application services (LocalAI, nginx proxying)
+- Generates config files and model YAML definitions
+- Starts services and verifies endpoints
+
+This separation ensures clean concerns: the virtualization layer focuses on infrastructure decisions (resource allocation, networking), while the application layer focuses on service provisioning (package management, service configuration).
 
 ## First Runtime Target
 

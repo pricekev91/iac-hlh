@@ -6,6 +6,13 @@ This repository owns HLH host and runtime infrastructure only.
 
 `apply.bash` is the operator entrypoint for Proxmox reconciliation.
 
+The provisioning system uses a two-layer architecture:
+
+- **Virtualization Layer (`apply.bash`)**: Runs on the Proxmox host. Manages LXC container lifecycle, networking, storage, and resource allocation.
+- **Application Layer (`scripts/provision-ai-appliance.bash`)**: Runs inside the LXC container. Installs packages, configures services, and manages application-level setup.
+
+See `docs/architecture.md` for details on the two-layer approach.
+
 ## Repository Boundary
 
 Included here:
@@ -64,8 +71,12 @@ iac-hlh/
 
 The current reconciled runtime is one shared `engine` LXC.
 
-Inside `engine`, apply provisions:
+**Virtualization layer** (`apply.bash`) ensures:
+- LXC container exists with correct CPU, memory, and network configuration
+- Host paths are bind-mounted into the container
+- Provisioning script is pushed into the container
 
+**Application layer** (`provision-ai-appliance.bash`) configures inside `engine`:
 - `LocalAI` on port `8081` with its built-in llama-cpp gRPC backend (model loading + OpenAI-compatible API)
 - `nginx` on port `8080` proxying the LocalAI UI and API
 - per-model YAML configs in `/srv/ai/models/` for full llama.cpp flag control
