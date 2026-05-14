@@ -29,13 +29,25 @@ install_localai_binary() {
     return 0
   fi
 
-  local os arch url
-  os="$(uname -s)"
-  arch="$(uname -m)"
-  url="https://github.com/mudler/LocalAI/releases/latest/download/local-ai-${os}-${arch}"
+  local arch_pattern release_json asset_url
+  case "$(uname -m)" in
+    x86_64)
+      arch_pattern='amd64'
+      ;;
+    aarch64|arm64)
+      arch_pattern='arm64'
+      ;;
+    *)
+      fail "Unsupported architecture for LocalAI binary install: $(uname -m)"
+      ;;
+  esac
 
-  log "Downloading LocalAI binary from ${url}"
-  curl -fsSL -o /usr/local/bin/local-ai "${url}" || fail "Failed to download LocalAI binary for ${os}/${arch}"
+  release_json="$(curl -fsSL https://api.github.com/repos/mudler/LocalAI/releases/latest)" || fail "Failed to query LocalAI releases API"
+  asset_url="$(printf '%s' "$release_json" | jq -r --arg arch "$arch_pattern" '.assets[] | select(.name | test("^local-ai-v.*-linux-" + $arch + "$")) | .browser_download_url' | head -n1)"
+  [[ -n "$asset_url" && "$asset_url" != "null" ]] || fail "Could not find LocalAI Linux asset for architecture pattern: ${arch_pattern}"
+
+  log "Downloading LocalAI binary from ${asset_url}"
+  curl -fsSL -o /usr/local/bin/local-ai "${asset_url}" || fail "Failed to download LocalAI binary from release assets"
   chmod 0755 /usr/local/bin/local-ai
 
   /usr/local/bin/local-ai --help >/dev/null 2>&1 || fail "Downloaded LocalAI binary is not executable"
