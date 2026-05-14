@@ -53,6 +53,14 @@ install_localai_binary() {
   /usr/local/bin/local-ai --help >/dev/null 2>&1 || fail "Downloaded LocalAI binary is not executable"
 }
 
+install_localai_backends() {
+  install -d -m 0755 /srv/ai/state/localai/backends
+
+  log "Ensuring LocalAI llama-cpp backend is installed"
+  /usr/local/bin/local-ai backends install llama-cpp \
+    --backends-path /srv/ai/state/localai/backends >/dev/null
+}
+
 write_runtime_contract() {
   install -d -m 0755 /etc/ai-engine /srv/ai/models /srv/ai/state /srv/ai/scratch /srv/ai/state/localai /opt/ai-engine/web
 
@@ -297,6 +305,9 @@ main() {
 
   log "Installing LocalAI binary"
   install_localai_binary
+
+  log "Installing LocalAI backends"
+  install_localai_backends
 
   log "Writing AI engine runtime contract"
   write_runtime_contract
