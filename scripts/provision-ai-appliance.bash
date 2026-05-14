@@ -210,23 +210,59 @@ EOF
   chmod 0755 /usr/local/bin/ai-engine-llama-server
 }
 
+write_localai_wrapper() {
+  cat >/usr/local/bin/ai-engine-localai-start <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+. /etc/ai-engine/runtime.env
+
+max_attempts=25
+delay=2
+
+for attempt in $(seq 1 "$max_attempts"); do
+  if curl -fsS --connect-timeout 2 --max-time 5 "http://${AI_ENGINE_LLAMA_SERVER_HOST}:${AI_ENGINE_LLAMA_SERVER_PORT}/health" >/dev/null 2>&1; then
+    break
+  fi
+
+  if [[ "$attempt" -eq "$max_attempts" ]]; then
+    echo "llama.cpp endpoint did not become reachable at ${AI_ENGINE_LLAMA_SERVER_HOST}:${AI_ENGINE_LLAMA_SERVER_PORT}" >&2
+    exit 1
+  fi
+
+  sleep "$delay"
+  if [[ "$delay" -lt 20 ]]; then
+    delay=$((delay * 2))
+    if [[ "$delay" -gt 20 ]]; then
+      delay=20
+    fi
+  fi
+done
+
+exec /usr/bin/docker run --rm --name ai-engine-localai \
+  --security-opt apparmor=unconfined \
+  -p "${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080" \
+  -v /srv/ai/state/localai/models:/models \
+  -v /srv/ai/state/localai:/tmp/localai \
+  "${AI_ENGINE_LOCALAI_IMAGE}"
+EOF
+
+  chmod 0755 /usr/local/bin/ai-engine-localai-start
+}
+
 write_services() {
   cat >/etc/systemd/system/ai-engine-localai.service <<'EOF'
 [Unit]
 Description=AI Engine LocalAI API (middleware)
-After=network-online.target docker.service
-Wants=network-online.target docker.service
+After=network-online.target docker.service ai-engine-llama-server.service
+Wants=network-online.target docker.service ai-engine-llama-server.service
+Requires=ai-engine-llama-server.service
 
 [Service]
 Type=simple
 EnvironmentFile=/etc/ai-engine/runtime.env
 ExecStartPre=-/usr/bin/docker rm -f ai-engine-localai
-ExecStart=/usr/bin/docker run --rm --name ai-engine-localai \
-  --security-opt apparmor=unconfined \
-  -p ${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080 \
-  -v /srv/ai/state/localai/models:/models \
-  -v /srv/ai/state/localai:/tmp/localai \
-  ${AI_ENGINE_LOCALAI_IMAGE}
+ExecStart=/usr/local/bin/ai-engine-localai-start
 ExecStop=/usr/bin/docker stop ai-engine-localai
 Restart=always
 RestartSec=2
@@ -261,10 +297,9 @@ EOF
 }
 
 start_services() {
+  systemctl restart ai-engine-llama-server.service || true
   systemctl restart ai-engine-localai.service
   systemctl restart nginx
-  # This service exits cleanly when no GGUF model exists yet.
-  systemctl restart ai-engine-llama-server.service || true
 }
 
 pull_default_model_if_requested() {
@@ -314,8 +349,14 @@ verify_endpoints() {
   done
 
   for attempt in $(seq 1 120); do
+    if ! curl -fsS --connect-timeout 2 --max-time 5 "http://127.0.0.1:${AI_ENGINE_LLAMA_SERVER_PORT}/health" >/dev/null 2>&1; then
+      sleep 2
+      continue
+    fi
+
     # Some LocalAI images do not expose /readyz. Treat any HTTP response from
-    # a core API path as ready, as long as the endpoint is reachable.
+    # a core API path as ready, as long as the endpoint is reachable and
+    # llama.cpp is already reachable.
     status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${AI_ENGINE_LOCALAI_PORT}/v1/models" || true)"
     if [[ "$status" != "000" ]]; then
       return 0
@@ -359,6 +400,7 @@ main() {
   log "Writing web UI and service definitions"
   write_nginx_config
   write_llama_server_wrapper
+  write_localai_wrapper
   write_services
 
   log "Starting services"
