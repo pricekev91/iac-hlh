@@ -76,11 +76,11 @@ write_localai_model_config() {
 
   local model_file
   local mmproj_file
-  local mmproj_dir
   local model_config_path
 
-  # Strip /srv/ai/models/ prefix so LocalAI resolves the path relative to its mounted /build/models dir
-  model_file="${AI_ENGINE_DEFAULT_MODEL_PATH#/srv/ai/models/}"
+  # Use absolute paths within the container's mount point so LocalAI can resolve them directly
+  # LocalAI mounts host /srv/ai/models at container /build/models
+  model_file="/build/models${AI_ENGINE_DEFAULT_MODEL_PATH#/srv/ai/models}"
   model_config_path="/srv/ai/models/${AI_ENGINE_DEFAULT_MODEL}.yaml"
 
   # Auto-detect mmproj: look for a gguf in the sibling mmproj/ directory relative to the model.
@@ -95,42 +95,34 @@ write_localai_model_config() {
   local mmproj_candidate
   mmproj_candidate="${models_root}/mmproj/${model_parent_name}/mmproj.gguf"
   if [[ -f "$mmproj_candidate" ]]; then
-    mmproj_file="${mmproj_candidate#/srv/ai/models/}"
+    # Use absolute path for mmproj too
+    mmproj_file="/build/models${mmproj_candidate#/srv/ai/models}"
   fi
 
-  # Build optional YAML fields
-  local mmproj_line=""
-  [[ -n "$mmproj_file" ]] && mmproj_line="  mmproj: ${mmproj_file}"
-
-  local flash_attn_line=""
-  [[ "${AI_ENGINE_LLAMA_FLASH_ATTN,,}" == "true" ]] && flash_attn_line="f16: true"
-
-  local no_mmap_line=""
-  [[ "${AI_ENGINE_LLAMA_NO_MMAP,,}" == "true" ]] && no_mmap_line="mmap: false"
-
-  local mlock_line=""
-  [[ "${AI_ENGINE_LLAMA_MLOCK,,}" == "true" ]] && mlock_line="mlock: true"
-
-  local cache_type_line=""
-  [[ -n "${AI_ENGINE_LLAMA_CACHE_TYPE:-}" ]] && cache_type_line="cache_type_k: ${AI_ENGINE_LLAMA_CACHE_TYPE}"
-
-  cat >"${model_config_path}" <<EOF
-name: ${AI_ENGINE_DEFAULT_MODEL}
-backend: llama-cpp
-parameters:
-  model: ${model_file}
-${mmproj_line:+${mmproj_line}\n}context_size: ${AI_ENGINE_LLAMA_CONTEXT_SIZE}
-threads: ${AI_ENGINE_LLAMA_THREADS}
-f16: true
-gpu_layers: ${AI_ENGINE_LLAMA_GPU_LAYERS}
-n_batch: ${AI_ENGINE_LLAMA_BATCH_SIZE}
-${flash_attn_line:+${flash_attn_line}\n}${no_mmap_line:+${no_mmap_line}\n}${mlock_line:+${mlock_line}\n}${cache_type_line:+${cache_type_line}\n}options:
-  - use_jinja:true
-known_usecases:
-  - chat
-  - completion
-EOF
+  # Write YAML using explicit conditionals to avoid heredoc newline escaping issues
+  {
+    echo "name: ${AI_ENGINE_DEFAULT_MODEL}"
+    echo "backend: llama-cpp"
+    echo "parameters:"
+    echo "  model: ${model_file}"
+    [[ -n "$mmproj_file" ]] && echo "  mmproj: ${mmproj_file}"
+    echo "context_size: ${AI_ENGINE_LLAMA_CONTEXT_SIZE}"
+    echo "threads: ${AI_ENGINE_LLAMA_THREADS}"
+    echo "f16: true"
+    echo "gpu_layers: ${AI_ENGINE_LLAMA_GPU_LAYERS}"
+    echo "n_batch: ${AI_ENGINE_LLAMA_BATCH_SIZE}"
+    [[ "${AI_ENGINE_LLAMA_NO_MMAP,,}" == "true" ]] && echo "mmap: false"
+    [[ "${AI_ENGINE_LLAMA_MLOCK,,}" == "true" ]] && echo "mlock: true"
+    [[ -n "${AI_ENGINE_LLAMA_CACHE_TYPE:-}" ]] && echo "cache_type_k: ${AI_ENGINE_LLAMA_CACHE_TYPE}"
+    echo "options:"
+    echo "  - use_jinja:true"
+    echo "known_usecases:"
+    echo "  - chat"
+    echo "  - completion"
+  } >"${model_config_path}"
 }
+
+
 
 
 
@@ -169,13 +161,26 @@ set -euo pipefail
 
 . /etc/ai-engine/runtime.env
 
-exec /usr/bin/docker run --rm --name ai-engine-localai \
-  --security-opt apparmor=unconfined \
-  -p "${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080" \
-  -v /srv/ai/models:/build/models \
-  -v /srv/ai/state/localai:/tmp/localai \
-  -e LLAMACPP_PARALLEL="${AI_ENGINE_LLAMA_PARALLEL:-1}" \
-  "${AI_ENGINE_LOCALAI_IMAGE}"
+# Build docker run command with optional GPU device passthrough
+local docker_run_args=(
+  --rm
+  --name ai-engine-localai
+  --security-opt apparmor=unconfined
+  -p "${AI_ENGINE_LOCALAI_HOST}:${AI_ENGINE_LOCALAI_PORT}:8080"
+  -v /srv/ai/models:/build/models
+  -v /srv/ai/state/localai:/tmp/localai
+  -e LLAMACPP_PARALLEL="${AI_ENGINE_LLAMA_PARALLEL:-1}"
+)
+
+# Pass GPU devices if available
+if [[ -e /dev/dri/card0 ]]; then
+  docker_run_args+=(--device /dev/dri/card0:/dev/dri/card0)
+fi
+if [[ -e /dev/dri/renderD128 ]]; then
+  docker_run_args+=(--device /dev/dri/renderD128:/dev/dri/renderD128)
+fi
+
+exec /usr/bin/docker run "${docker_run_args[@]}" "${AI_ENGINE_LOCALAI_IMAGE}"
 EOF
 
   chmod 0755 /usr/local/bin/ai-engine-localai-start
