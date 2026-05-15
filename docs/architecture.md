@@ -1,82 +1,181 @@
 # HLH Architecture
 
-## Intent
+## 1. Executive Intent
 
-`iac-hlh` manages HLH host infrastructure for `192.168.6.10`.
+`iac-hlh` is the infrastructure control repository for HLH (`192.168.6.10`).
 
-The first reconciled runtime is a shared AI engine LXC named `engine`. That appliance is shared infrastructure and must remain independent of any single application repository.
+Its strategic purpose is to provide a stable, shared AI runtime on Proxmox that can serve multiple applications while preserving strict ownership boundaries:
 
-## Apply Layout
+- `iac-hlh` owns infrastructure contracts and runtime placement.
+- application repositories own product logic and application behavior.
 
-The repository uses a small apply-style operator layout:
+As of May 2026, the active reconciled runtime is a single shared `engine` LXC.
+
+## 2. Current-State Summary
+
+### Active In Production
+
+- Proxmox-hosted `engine` LXC (`vmid: 101`)
+- Native `LocalAI` with `llama-cpp` backend
+- `nginx` reverse proxy in front of LocalAI
+- Persistent host mounts for model/state/scratch data
+- Optional AMD iGPU passthrough using `/dev/dri`
+
+### Defined But Not Active In The Apply Path
+
+- `platforms/presentation.yaml`
+- `platforms/trashpanda-app.yaml`
+- `scripts/provision-openwebui.bash`
+- `scripts/provision-trashpanda-host.bash`
+
+`apply.bash` currently enforces a single-engine generation and exits if legacy inventory keys (`presentation.*` or `trashpanda_app.*`) are present.
+
+## 3. Layered Architecture
 
 ```text
-iac-hlh/
-├── bootstrap/
-├── docs/
-├── inventory/
-├── platforms/
-├── scripts/
-├── apply.bash
-├── README.md
-└── zfsbootstrap.sh
+Layer 6 - Business Outcomes
+	- Fast local inference capability
+	- Shared service reuse across products
+	- Controlled infrastructure risk and cost
+
+Layer 5 - Consumer Applications
+	- TrashPanda and future application repos
+	- Depend on API contract, not host internals
+
+Layer 4 - Shared AI Service Contract
+	- Endpoints: 8080 (nginx proxy), 8081 (LocalAI)
+	- OpenAI-compatible API surface at /v1/*
+	- Declarative per-model YAML runtime tuning
+
+Layer 3 - Engine Runtime (Inside LXC)
+	- local-ai binary and llama-cpp backend
+	- systemd unit: ai-engine-localai.service
+	- nginx service for UI/API proxying
+	- runtime.env contract for deterministic startup
+
+Layer 2 - Reconciliation Control Plane (Proxmox Host)
+	- apply.bash operator
+	- YAML merge: platforms/engine.yaml + inventory/hlh-prod.yaml
+	- pct lifecycle operations, mounts, device mapping
+	- provisioning push/exec and compatibility guardrails
+
+Layer 1 - Host Foundation (HLH)
+	- Proxmox VE host at 192.168.6.10
+	- storage backing and network bridge policy
+	- optional amdgpu host binding for GPU passthrough
 ```
 
-- `apply.bash` is the operator entrypoint for Proxmox reconciliation (runs on Proxmox host)
-- `inventory/` contains HLH-specific host values
-- `platforms/` contains reusable runtime definitions such as the shared `engine` appliance
-- `scripts/provision-ai-appliance.bash` contains in-container provisioning logic (runs inside LXC)
-- `bootstrap/` contains host preparation scripts
+## 4. Architecture Views
 
-## Two-Layer Architecture
+### 4.1 Control Flow View
 
-The provisioning system has two distinct layers:
+```text
+Operator/Automation
+	|
+	|  ./apply.bash [--plan] inventory/hlh-prod.yaml
+	v
+apply.bash on HLH (Control Plane)
+	|
+	|-- validate config + compatibility gates
+	|-- pct create/set/start
+	|-- pct set mp0/mp1/mp2
+	|-- pct set dev0/dev1 (when GPU enabled)
+	|-- pct push provision-ai-appliance.bash
+	|-- pct exec env ... /root/provision-ai-appliance.bash
+	v
+Engine LXC (Data Plane)
+```
 
-**Layer 1: Virtualization (apply.bash)** — Runs on the Proxmox host
-- Parses inventory YAML files to determine desired state
-- Creates/destroys/modifies LXC containers (CPU, memory, networking)
-- Manages bind mounts and host storage attachment
-- Pushes provisioning scripts into containers
-- Orchestrates the application layer via `pct exec`
+### 4.2 Service Runtime View
 
-**Layer 2: Application (provision-ai-appliance.bash)** — Runs inside the LXC container
-- Installs OS packages and LocalAI native binary (nginx, systemd)
-- Configures native LocalAI service and nginx proxying
-- Generates config files and model YAML definitions
-- Starts services and verifies endpoints
+```text
+Client Applications
+	|
+	| HTTP requests
+	v
+nginx :8080 (inside engine)
+	|
+	| proxy_pass
+	v
+LocalAI :8081 (inside engine)
+	|
+	| llama-cpp backend + model YAML config
+	v
+Model Artifacts (/srv/ai/models)
 
-This separation ensures clean concerns: the virtualization layer focuses on infrastructure decisions (resource allocation, networking), while the application layer focuses on service provisioning (package management, service configuration).
+State Paths:
+	/srv/ai/state    -> LocalAI data + backends
+	/srv/ai/scratch  -> transient workload space
+```
 
-## First Runtime Target
+### 4.3 Host-To-Container Contract View
 
-The first runtime target is the shared `engine` LXC.
+```text
+HLH Host Paths                    Engine Container Paths
+-------------------------------   ----------------------------
+/srv/ai/models                 -> /srv/ai/models
+/srv/ai/state                  -> /srv/ai/state
+/srv/ai/scratch                -> /srv/ai/scratch
+/dev/dri/card0      (optional) -> /dev/dri/card0
+/dev/dri/renderD128 (optional) -> /dev/dri/renderD128
+```
 
-Current scope:
+## 5. Operating Model
 
-- privileged Proxmox LXC
-- bridged network attachment
-- mounted host paths for models, state, and scratch data
-- optional `/dev/dri` passthrough for AMD iGPU-backed inference
-- in-container provisioning for native LocalAI (no Docker runtime layer)
-- LocalAI owns model loading, inference, and the OpenAI-compatible API
-- per-model YAML configs in `/srv/ai/models/` expose full llama.cpp flags (context, cache type, flash attention, mlock, threads, etc.)
-- nginx on port `8080` proxies the LocalAI UI and API
-- host-side AMD iGPU rebinding workflow for HLH when Proxmox is still binding the device to `vfio-pci`
+### Reconciliation Lifecycle
 
-Out of scope for this slice:
+1. Validate and plan desired state (`--plan`).
+2. Reconcile LXC base configuration and networking.
+3. Reconcile mounts and optional GPU devices.
+4. Ensure container runtime is started.
+5. Push and execute in-container provisioning.
+6. Verify LocalAI readiness (`/readyz`) before success.
 
-- standalone `llama-server` (removed; LocalAI's llama-cpp backend replaces it)
-- application-specific Docker stacks
-- orchestrator and agents LXCs
+### Guardrails And Safety Controls
 
-## Appliance Contract
+- Legacy stack protection: non-`localai-stack` engine tags require one-time recreate.
+- Legacy inventory key protection: mixed generation keys are rejected.
+- Provisioning verifies executable integrity and endpoint readiness before completion.
 
-The shared appliance presents a stable local contract to consuming applications:
+## 6. Capacity And Configuration Posture
 
-- `LocalAI` UI and API on port `8080` (via nginx proxy) and port `8081` (direct)
-- OpenAI-compatible API at `http://192.168.6.252:8081/v1/`
-- application-agnostic host mounts and runtime wiring
+Current inventory and platform defaults combine to a high-capacity engine footprint:
 
-Model configuration is fully declarative: each GGUF model in `/srv/ai/models/` has a matching `.yaml` config that controls all inference parameters. No SSH required to change model flags — edit the YAML and restart LocalAI.
+- rootfs: `250G`
+- CPU: 12 cores
+- memory: 48 GiB
+- swap: 4 GiB
+- network: bridged static IP (`192.168.6.252/22`)
+- GPU mode: enabled (host prerequisite required)
 
-This repo owns how the appliance runs on HLH. Consuming application repos own how they use it.
+Primary model settings are inventory-controlled (model path, context size, GPU layers, threads, batching, cache behavior), allowing tuning without changing operator code.
+
+## 7. Security And Governance Notes
+
+- The engine runtime is currently privileged for host integration flexibility.
+- Secrets are expected to be managed outside git and injected by runtime wiring.
+- Ownership boundaries remain strict: application repos consume contracts; they do not define HLH host internals.
+
+## 8. Risks And Considerations
+
+- GPU dependency risk: if host remains bound to `vfio-pci`, `/dev/dri` passthrough is unavailable.
+- Single-runtime concentration risk: current architecture concentrates shared inference into one LXC.
+- Documentation drift risk: future activation of presentation/app slices requires synchronized contract updates.
+
+## 9. Forward Path
+
+The repository already contains artifacts for future runtime slices (presentation and app hosting), but current operator behavior intentionally preserves a single-engine scope.
+
+Expansion should occur only when:
+
+1. service-level objectives for the shared engine are stable,
+2. operational observability is sufficient for multi-slice operations,
+3. ownership boundaries remain enforceable.
+
+## 10. Key Artifacts
+
+- `apply.bash` - HLH reconciliation entrypoint
+- `inventory/hlh-prod.yaml` - production environment values
+- `platforms/engine.yaml` - shared AI engine baseline
+- `scripts/provision-ai-appliance.bash` - in-container engine provisioning
+- `docs/amd-igpu-host.md` - host GPU binding preconditions
