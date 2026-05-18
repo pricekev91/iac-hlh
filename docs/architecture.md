@@ -44,7 +44,7 @@ Layer 5 - Consumer Applications
 	- Depend on API contract, not host internals
 
 Layer 4 - Shared AI Service Contract
-	- Endpoints: 8080 (nginx proxy), 8081 (LocalAI)
+	- Endpoints: 8080 (LocalAI)
 	- OpenAI-compatible API surface at /v1/*
 	- Declarative per-model YAML runtime tuning
 
@@ -98,7 +98,7 @@ nginx :8080 (inside engine)
 	|
 	| proxy_pass
 	v
-LocalAI :8081 (inside engine)
+LocalAI :8080 (inside engine)
 	|
 	| llama-cpp backend + model YAML config
 	v

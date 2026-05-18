@@ -460,7 +460,7 @@ main() {
     card0_path="$(config_get engine.gpu.card0 /dev/dri/card0)"
     render_path="$(config_get engine.gpu.render /dev/dri/renderD128)"
     webui_port="$(config_get engine.webui_port 8080)"
-    localai_port="$(config_get engine.localai_port 8081)"
+    localai_port="$(config_get engine.localai_port 8080)"
     default_model="$(config_get engine.default_model qwen2.5-coder:7b)"
     default_model_url="$(config_get engine.default_model_url '')"
     pull_default_model="$(config_get engine.pull_default_model false)"

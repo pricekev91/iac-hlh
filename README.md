@@ -45,8 +45,8 @@ The active reconciliation path is:
 ### Runtime Contract
 
 - UI/API proxy endpoint: `http://192.168.6.252:8080`
-- Direct LocalAI endpoint: `http://192.168.6.252:8081`
-- OpenAI-compatible API base: `http://192.168.6.252:8081/v1/`
+- Direct LocalAI endpoint: `http://192.168.6.252:8080`
+- OpenAI-compatible API base: `http://192.168.6.252:8080/v1/`
 - Model configs: `/srv/ai/models/*.yaml`
 - Persistent host mounts:
 	- `/srv/ai/models` -> `/srv/ai/models`
