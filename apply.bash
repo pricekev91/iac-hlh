@@ -303,17 +303,11 @@ ensure_engine_gpu_devices() {
         return 0
     fi
 
-    if [[ -e "$card0_path" ]]; then
-        run_cmd pct set "$vmid" --dev0 "path=${card0_path}"
-    else
-        log "Skipping missing GPU device: $card0_path"
-    fi
+    [[ -e "$card0_path" ]] || fail "GPU passthrough requested but host device is missing: ${card0_path}. Ensure the Proxmox host has /dev/dri from amdgpu binding."
+    [[ -e "$render_path" ]] || fail "GPU passthrough requested but host device is missing: ${render_path}. Ensure the Proxmox host has /dev/dri from amdgpu binding."
 
-    if [[ -e "$render_path" ]]; then
-        run_cmd pct set "$vmid" --dev1 "path=${render_path}"
-    else
-        log "Skipping missing GPU device: $render_path"
-    fi
+    run_cmd pct set "$vmid" --dev0 "path=${card0_path}"
+    run_cmd pct set "$vmid" --dev1 "path=${render_path}"
 }
 
 provision_engine_runtime() {
@@ -487,6 +481,10 @@ main() {
     [[ -n "$models_source" ]] || fail "storage.models_host_path must be set in inventory"
     [[ -n "$state_source" ]] || fail "storage.state_host_path must be set in inventory"
     [[ -n "$scratch_source" ]] || fail "storage.scratch_host_path must be set in inventory"
+
+    if [[ "$(bool_to_pct "$enable_gpu")" == "1" && "$unprivileged" == "1" ]]; then
+        fail "engine.enable_gpu=true requires a privileged LXC in this stack (set engine.unprivileged: false)."
+    fi
 
     if [[ -n "$(config_get presentation.vmid)" || -n "$(config_get trashpanda_app.vmid)" ]]; then
         fail "Legacy inventory keys detected (presentation.* or trashpanda_app.*). Remove those sections to use the single-engine stack."

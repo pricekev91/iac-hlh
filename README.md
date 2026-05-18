@@ -9,10 +9,11 @@ This repository is the infrastructure control plane for HLH. It defines and reco
 As of May 2026, `iac-hlh` is operating a **single production shared AI runtime** on HLH:
 
 - `engine` LXC (`vmid: 101`, hostname: `engine`, IP: `192.168.6.252/22`)
+- privileged container mode (`engine.unprivileged: false`)
 - Native `LocalAI` service with `llama-cpp` backend
 - `nginx` reverse proxy for LocalAI UI/API exposure
 - Host-mounted model/state/scratch paths for persistent operation
-- Optional AMD iGPU passthrough via `/dev/dri`
+- AMD iGPU passthrough via `/dev/dri` for GPU-backed llama.cpp
 
 This design intentionally centralizes inference infrastructure once and allows multiple applications to consume the same contract without coupling them to host internals.
 
@@ -58,7 +59,7 @@ The active reconciliation path is:
 - CPU: 12 cores (platform default)
 - memory: 48 GiB (platform default)
 - swap: 4 GiB
-- privileged LXC with nesting/keyctl enabled
+- privileged LXC with nesting/keyctl enabled (required for this GPU passthrough contract)
 
 ## Layered Architecture (Text Diagram)
 
@@ -85,7 +86,7 @@ Layer 2 - Infrastructure Reconciliation (Proxmox Host)
 Layer 1 - Physical/Host Foundation (HLH)
 	- Proxmox VE host (192.168.6.10)
 	- ZFS-backed storage pools
-	- optional AMD iGPU binding to amdgpu for /dev/dri passthrough
+	- required AMD iGPU binding to amdgpu for /dev/dri passthrough when engine.enable_gpu=true
 ```
 
 ## Control And Data Flow (Text Diagram)
@@ -99,7 +100,7 @@ Proxmox Host (HLH)
 	|
 	|-- pct create/set/start (LXC lifecycle)
 	|-- pct set mp* (models/state/scratch mounts)
-	|-- pct set dev* (/dev/dri passthrough when enabled)
+	|-- pct set dev* (/dev/dri passthrough when enabled; apply fails fast if host devices are missing)
 	|-- pct push + pct exec (provision-ai-appliance.bash)
 	v
 Engine LXC (vmid 101)

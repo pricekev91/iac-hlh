@@ -3,6 +3,7 @@
 HLH currently exposes the Strix iGPU as PCI device `1002:150e`.
 
 For the `engine` LXC to consume `/dev/dri`, the Proxmox host must bind the device to `amdgpu`, not `vfio-pci`.
+The `engine` LXC is expected to run privileged (`unprivileged: false`) so `pct set --dev*` passthrough is deterministic for llama.cpp GPU usage.
 
 Current observed host blockers on HLH:
 
@@ -32,3 +33,4 @@ Expected outcome:
 - the GPU reports `Kernel driver in use: amdgpu`
 
 Only after that should the `engine` LXC expect successful `/dev/dri` passthrough.
+When `engine.enable_gpu=true`, `apply.bash` now fails fast if `/dev/dri/card0` or `/dev/dri/renderD128` is missing on the host.
