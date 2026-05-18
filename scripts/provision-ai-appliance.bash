@@ -291,7 +291,7 @@ main() {
   require_root
 
   export AI_ENGINE_WEBUI_PORT="${AI_ENGINE_WEBUI_PORT:-8080}"
-  export AI_ENGINE_LOCALAI_PORT="${AI_ENGINE_LOCALAI_PORT:-8080}"
+  export AI_ENGINE_LOCALAI_PORT="${AI_ENGINE_LOCALAI_PORT:-3000}"
   export AI_ENGINE_DEFAULT_MODEL="${AI_ENGINE_DEFAULT_MODEL:-tinyllama-1.1b-chat-v1.0}"
   export AI_ENGINE_DEFAULT_MODEL_URL="${AI_ENGINE_DEFAULT_MODEL_URL:-https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf}"
   export AI_ENGINE_DEFAULT_MODEL_PATH="${AI_ENGINE_DEFAULT_MODEL_PATH:-/srv/ai/models/default.gguf}"
