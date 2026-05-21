@@ -1,0 +1,11 @@
+---
+docker_users:
+  - ops
+
+docker_compose_version: "v2.29.7"
+lazydocker_version: "0.23.3"
+install_dockhand: false
+
+docker_daemon_log_driver: "json-file"
+docker_daemon_log_max_size: "10m"
+docker_daemon_log_max_file: "3"

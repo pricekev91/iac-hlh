@@ -1,0 +1,6 @@
+---
+- name: Configure Docker host guest
+  hosts: docker_hosts
+  become: true
+  roles:
+    - docker_host

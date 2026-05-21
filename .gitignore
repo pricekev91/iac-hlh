@@ -1,0 +1,14 @@
+# OpenTofu / Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+infra/tofu/**/terraform.tfvars
+infra/tofu/**/terraform.tfvars.json
+
+# Ansible
+*.retry
+
+# OS/editor
+.DS_Store

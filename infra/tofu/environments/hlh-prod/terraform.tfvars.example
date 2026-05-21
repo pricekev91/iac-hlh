@@ -1,0 +1,21 @@
+proxmox_endpoint         = "https://192.168.6.10:8006/api2/json"
+proxmox_username         = "root@pam"
+proxmox_password         = "REPLACE_ME"
+proxmox_insecure_tls     = true
+proxmox_node_name        = "prox01"
+
+proxmox_disk_datastore_id = "local-zfs"
+proxmox_iso_datastore_id  = "local"
+
+docker_vm_id            = 202
+docker_vm_name          = "docker-host"
+docker_vm_ipv4_cidr     = "192.168.6.240/22"
+docker_vm_gateway       = "192.168.4.1"
+docker_vm_bridge        = "vmbr0"
+docker_vm_cpu_cores     = 4
+docker_vm_memory_mb     = 8192
+docker_vm_disk_size_gb  = 120
+docker_vm_ci_user       = "ops"
+docker_vm_ci_ssh_public_key = "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY"
+
+docker_vm_dns_servers = ["1.1.1.1", "8.8.8.8"]

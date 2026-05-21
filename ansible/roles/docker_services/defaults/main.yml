@@ -1,0 +1,10 @@
+---
+services_root_dir: /opt/hlh/services
+
+hlh_service_stacks:
+  - name: openspeedtest
+    source_dir: "{{ playbook_dir }}/../../services/openspeedtest"
+    compose_file: docker-compose.yml
+  - name: uptime-kuma
+    source_dir: "{{ playbook_dir }}/../../services/uptime-kuma"
+    compose_file: docker-compose.yml

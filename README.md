@@ -53,6 +53,8 @@ The active reconciliation path is:
 	- `/srv/ai/state` -> `/srv/ai/state`
 	- `/srv/ai/scratch` -> `/srv/ai/scratch`
 
+For VS Code Chat and other OpenAI-compatible clients, point the client at the `/v1/` base URL and choose a model from `GET /v1/models`. A `404` from `GET /v1` is not a failure for this stack; the compatibility contract is the OpenAI-style subroutes, especially `/v1/models` and `/v1/chat/completions`.
+
 ### Capacity Profile (Current Inventory)
 
 - rootfs size: `250G`
@@ -148,3 +150,37 @@ iac-hlh/
 - **Governance model**: strict separation between host infrastructure ownership (`iac-hlh`) and application repository ownership.
 
 For detailed architecture, operating model, and risk posture, see `docs/architecture.md`.
+
+## Hybrid Migration Baseline (May 2026)
+
+The existing engine path is intentionally unchanged:
+
+1. `./apply.bash --plan inventory/hlh-prod.yaml`
+2. `./apply.bash inventory/hlh-prod.yaml`
+
+New Docker VM + service stacks are now introduced as a separate control path:
+
+- OpenTofu module: `infra/tofu/modules/docker-vm`
+- OpenTofu environment: `infra/tofu/environments/hlh-prod`
+- Ansible role/playbook: `ansible/roles/docker_host`, `ansible/playbooks/docker-host.yml`
+- Service stacks: `services/openspeedtest`, `services/uptime-kuma`
+- Bash wrappers:
+	- `scripts/hybrid-plan.bash`
+	- `scripts/hybrid-apply.bash`
+	- `scripts/hybrid-status.bash`
+
+This keeps Bash as thin orchestration while OpenTofu manages infrastructure state and Ansible manages guest configuration.
+
+### Hybrid Workflow
+
+1. Copy `infra/tofu/environments/hlh-prod/terraform.tfvars.example` to `terraform.tfvars` and fill credentials/SSH key.
+2. Update `ansible/inventory/hlh-prod.yml` to the Docker VM IP/SSH user.
+3. Run:
+
+```bash
+./scripts/hybrid-plan.bash
+./scripts/hybrid-apply.bash
+./scripts/hybrid-status.bash
+```
+
+See `docs/hybrid-iac-migration.md` for details.
