@@ -1,4 +1,10 @@
 ---
+- name: Validate service orchestrator provider value
+  ansible.builtin.assert:
+    that:
+      - service_orchestrator_provider in service_orchestrator_commands
+    fail_msg: "Unsupported service_orchestrator_provider={{ service_orchestrator_provider }}"
+
 - name: Ensure services root exists
   ansible.builtin.file:
     path: "{{ services_root_dir }}"
@@ -22,8 +28,8 @@
 - name: Start or update stacks with docker compose
   ansible.builtin.command:
     argv:
-      - docker
-      - compose
+      - "{{ service_orchestrator_commands[service_orchestrator_provider].binary }}"
+      - "{{ service_orchestrator_commands[service_orchestrator_provider].subcommand }}"
       - -f
       - "{{ services_root_dir }}/{{ item.name }}/{{ item.compose_file }}"
       - up

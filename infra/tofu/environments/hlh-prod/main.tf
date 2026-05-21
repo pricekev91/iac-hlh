@@ -18,3 +18,24 @@ module "docker_vm" {
   ci_ssh_public_key = var.docker_vm_ci_ssh_public_key
   iso_datastore_id  = var.proxmox_iso_datastore_id
 }
+
+module "ai_vm" {
+  source = "../../modules/ai-vm"
+
+  node_name         = var.proxmox_node_name
+  vm_id             = var.ai_vm_id
+  name              = var.ai_vm_name
+  description       = "HLH AI ROCm VM"
+  tags              = ["hlh", "ai", "rocm", "inference"]
+  cpu_cores         = var.ai_vm_cpu_cores
+  memory_mb         = var.ai_vm_memory_mb
+  disk_datastore_id = var.proxmox_disk_datastore_id
+  disk_size_gb      = var.ai_vm_disk_size_gb
+  bridge            = var.ai_vm_bridge
+  ipv4_cidr         = var.ai_vm_ipv4_cidr
+  ipv4_gateway      = var.ai_vm_gateway
+  dns_servers       = var.ai_vm_dns_servers
+  ci_user           = var.ai_vm_ci_user
+  ci_ssh_public_key = var.ai_vm_ci_ssh_public_key
+  iso_datastore_id  = var.proxmox_iso_datastore_id
+}

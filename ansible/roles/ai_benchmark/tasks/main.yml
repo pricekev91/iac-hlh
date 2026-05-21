@@ -1,0 +1,66 @@
+---
+- name: Collect rocminfo output
+  ansible.builtin.command: rocminfo
+  register: rocminfo_out
+  changed_when: false
+  failed_when: false
+
+- name: Collect rocm-smi output
+  ansible.builtin.command: rocm-smi
+  register: rocmsmi_out
+  changed_when: false
+  failed_when: false
+
+- name: Collect PyTorch ROCm availability
+  ansible.builtin.command: python3 -c "import torch; print('torch_version=' + torch.__version__); print('hip=' + str(torch.version.hip)); print('cuda_available=' + str(torch.cuda.is_available()))"
+  register: torch_rocm_out
+  changed_when: false
+  failed_when: false
+
+- name: Check vLLM health endpoint
+  ansible.builtin.uri:
+    url: "{{ ai_benchmark_vllm_health_url }}"
+    method: GET
+    return_content: true
+  register: vllm_health
+  failed_when: false
+
+- name: Check llama.cpp health endpoint
+  ansible.builtin.uri:
+    url: "{{ ai_benchmark_llama_health_url }}"
+    method: GET
+    return_content: true
+  register: llama_health
+  failed_when: false
+
+- name: Run llama-bench when available
+  ansible.builtin.command: "{{ ai_benchmark_llama_cpp_bin }} -m {{ ai_benchmark_llama_model }} -n 128 -ngl 99"
+  register: llama_bench_out
+  changed_when: false
+  failed_when: false
+  when: ai_benchmark_llama_cpp_bin is file and ai_benchmark_llama_model is file
+
+- name: Write benchmark report artifact
+  ansible.builtin.copy:
+    dest: "{{ ai_benchmark_output_file }}"
+    mode: "0644"
+    content: |
+      === rocminfo ===
+      {{ rocminfo_out.stdout | default('missing') }}
+
+      === rocm-smi ===
+      {{ rocmsmi_out.stdout | default('missing') }}
+
+      === pytorch rocm ===
+      {{ torch_rocm_out.stdout | default('missing') }}
+
+      === vllm health ===
+      status={{ vllm_health.status | default('n/a') }}
+      body={{ vllm_health.content | default('') }}
+
+      === llama.cpp health ===
+      status={{ llama_health.status | default('n/a') }}
+      body={{ llama_health.content | default('') }}
+
+      === llama-bench ===
+      {{ llama_bench_out.stdout | default('llama-bench skipped or unavailable') }}

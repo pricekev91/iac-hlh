@@ -1,0 +1,145 @@
+---
+- name: Install base dependencies for AI VM build and runtime
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - git
+      - build-essential
+      - cmake
+      - ninja-build
+      - python3
+      - python3-pip
+      - python3-venv
+      - pkg-config
+      - libnuma-dev
+    state: present
+    update_cache: true
+
+- name: Ensure apt keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add ROCm apt GPG key
+  ansible.builtin.get_url:
+    url: "{{ ai_rocm_apt_repo_url }}/rocm.gpg.key"
+    dest: /etc/apt/keyrings/rocm.asc
+    mode: "0644"
+
+- name: Add ROCm apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.asc] {{ ai_rocm_apt_repo_url }} {{ ai_rocm_apt_repo_dist }} {{ ai_rocm_apt_repo_component }}"
+    filename: rocm
+    state: present
+
+- name: Install ROCm packages
+  ansible.builtin.apt:
+    name: "{{ ai_rocm_packages }}"
+    state: present
+    update_cache: true
+
+- name: Ensure AI workspace directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ ai_engine_user }}"
+    group: "{{ ai_engine_group }}"
+  loop:
+    - "{{ ai_engine_workspace }}"
+    - "{{ ai_engine_models_dir }}"
+    - "{{ ai_engine_logs_dir }}"
+
+- name: Ensure runtime user can access GPU device groups
+  ansible.builtin.user:
+    name: "{{ ai_engine_user }}"
+    groups: video,render
+    append: true
+
+- name: Clone llama.cpp
+  ansible.builtin.git:
+    repo: "{{ ai_llama_cpp_repo }}"
+    dest: "{{ ai_engine_workspace }}/llama.cpp"
+    version: "{{ ai_llama_cpp_ref }}"
+    update: true
+  become_user: "{{ ai_engine_user }}"
+
+- name: Configure llama.cpp HIP build
+  ansible.builtin.command:
+    argv:
+      - cmake
+      - -S
+      - "{{ ai_engine_workspace }}/llama.cpp"
+      - -B
+      - "{{ ai_engine_workspace }}/llama.cpp/build"
+      - -DGGML_HIP=ON
+      - "-DAMDGPU_TARGETS={{ ai_llama_cpp_gpu_arch }}"
+  become_user: "{{ ai_engine_user }}"
+
+- name: Build llama.cpp binaries
+  ansible.builtin.command:
+    argv:
+      - cmake
+      - --build
+      - "{{ ai_engine_workspace }}/llama.cpp/build"
+      - --parallel
+  become_user: "{{ ai_engine_user }}"
+
+- name: Create Python venv for vLLM
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -m
+      - venv
+      - "{{ ai_vllm_venv }}"
+    creates: "{{ ai_vllm_venv }}/bin/activate"
+  when: ai_backend_provider == "vllm"
+
+- name: Install PyTorch ROCm and vLLM into venv
+  ansible.builtin.pip:
+    name:
+      - pip
+      - wheel
+      - setuptools
+      - torch
+      - torchvision
+      - torchaudio
+      - vllm
+    state: latest
+    virtualenv: "{{ ai_vllm_venv }}"
+    extra_args: "--extra-index-url {{ ai_vllm_torch_index_url }}"
+  when: ai_backend_provider == "vllm"
+
+- name: Install llama.cpp systemd service
+  ansible.builtin.template:
+    src: ai-llama-cpp.service.j2
+    dest: /etc/systemd/system/ai-llama-cpp.service
+    mode: "0644"
+
+- name: Install vLLM systemd service
+  ansible.builtin.template:
+    src: ai-vllm.service.j2
+    dest: /etc/systemd/system/ai-vllm.service
+    mode: "0644"
+  when: ai_backend_provider == "vllm"
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable and start llama.cpp service
+  ansible.builtin.service:
+    name: ai-llama-cpp
+    enabled: true
+    state: started
+
+- name: Enable and start vLLM service
+  ansible.builtin.service:
+    name: ai-vllm
+    enabled: true
+    state: started
+  when: ai_backend_provider == "vllm"

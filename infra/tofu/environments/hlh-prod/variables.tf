@@ -99,3 +99,65 @@ variable "docker_vm_dns_servers" {
   type        = list(string)
   default     = ["1.1.1.1", "8.8.8.8"]
 }
+
+variable "ai_vm_id" {
+  description = "VMID for AI VM."
+  type        = number
+}
+
+variable "ai_vm_name" {
+  description = "Name for AI VM."
+  type        = string
+  default     = "ai-vm"
+}
+
+variable "ai_vm_ipv4_cidr" {
+  description = "Static IP CIDR for AI VM."
+  type        = string
+}
+
+variable "ai_vm_gateway" {
+  description = "Gateway for AI VM."
+  type        = string
+}
+
+variable "ai_vm_bridge" {
+  description = "Bridge for AI VM NIC."
+  type        = string
+  default     = "vmbr0"
+}
+
+variable "ai_vm_cpu_cores" {
+  description = "vCPU cores for AI VM."
+  type        = number
+  default     = 12
+}
+
+variable "ai_vm_memory_mb" {
+  description = "Memory in MB for AI VM."
+  type        = number
+  default     = 65536
+}
+
+variable "ai_vm_disk_size_gb" {
+  description = "Primary disk size in GB for AI VM."
+  type        = number
+  default     = 250
+}
+
+variable "ai_vm_ci_user" {
+  description = "Cloud-init username for AI VM."
+  type        = string
+  default     = "ops"
+}
+
+variable "ai_vm_ci_ssh_public_key" {
+  description = "SSH public key for AI VM cloud-init user."
+  type        = string
+}
+
+variable "ai_vm_dns_servers" {
+  description = "DNS servers for AI VM."
+  type        = list(string)
+  default     = ["1.1.1.1", "8.8.8.8"]
+}

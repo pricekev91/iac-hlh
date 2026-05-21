@@ -1,5 +1,14 @@
 ---
 services_root_dir: /opt/hlh/services
+service_orchestrator_provider: docker_compose
+
+service_orchestrator_commands:
+  docker_compose:
+    binary: docker
+    subcommand: compose
+  dockhand:
+    binary: dockhand
+    subcommand: compose
 
 hlh_service_stacks:
   - name: openspeedtest

@@ -1,0 +1,6 @@
+---
+ai_benchmark_output_file: /var/log/ai-benchmark-latest.txt
+ai_benchmark_llama_cpp_bin: /opt/ai-engine/llama.cpp/build/bin/llama-bench
+ai_benchmark_llama_model: /srv/ai/models/default.gguf
+ai_benchmark_vllm_health_url: http://127.0.0.1:8000/health
+ai_benchmark_llama_health_url: http://127.0.0.1:8081/health

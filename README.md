@@ -184,3 +184,20 @@ This keeps Bash as thin orchestration while OpenTofu manages infrastructure stat
 ```
 
 See `docs/hybrid-iac-migration.md` for details.
+
+## AI VM ROCm Migration Path
+
+The repository now supports a parallel migration from AI LXC to AI VM while keeping the existing path stable until cutover.
+
+- Build and configure AI VM: `./scripts/ai-vm-apply.bash`
+- Benchmark and validate: included in `ai-vm-apply.bash` and available in `ansible/playbooks/benchmark-ai-vm.yml`
+- Switch endpoint: `./scripts/ai-vm-cutover.bash`
+- Decommission legacy LXC (explicit confirm required): `./scripts/ai-vm-decommission-lxc.bash --confirm`
+
+Modularity is a prime directive:
+
+- Runtime provider switch lives in `ansible/group_vars/all.yml` (`container_runtime_provider`)
+- Service orchestrator switch lives in `ansible/group_vars/all.yml` (`service_orchestrator_provider`)
+- AI backend switch lives in `ansible/roles/ai_rocm_engine/defaults/main.yml` (`ai_backend_provider`, default `llama_cpp`)
+
+See `docs/ai-vm-rocm-migration.md` for the full phase-by-phase flow.

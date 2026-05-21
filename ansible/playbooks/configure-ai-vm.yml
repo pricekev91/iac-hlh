@@ -1,0 +1,6 @@
+---
+- name: Configure AI VM with ROCm and engines
+  hosts: ai_vms
+  become: true
+  roles:
+    - ai_rocm_engine

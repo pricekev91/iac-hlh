@@ -1,0 +1,23 @@
+---
+- name: Switch shared AI endpoint to AI VM target
+  hosts: docker_hosts
+  become: true
+  vars:
+    ai_api_hostname: ai-engine.hlh.internal
+    ai_api_target_ip: 192.168.6.253
+  tasks:
+    - name: Ensure /etc/hosts maps shared AI hostname to AI VM
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '.*{{ ai_api_hostname | regex_escape() }}$'
+        line: "{{ ai_api_target_ip }} {{ ai_api_hostname }}"
+        state: present
+
+    - name: Record active AI endpoint contract
+      ansible.builtin.copy:
+        dest: /etc/hlh-ai-endpoint.env
+        mode: "0644"
+        content: |
+          AI_API_HOSTNAME={{ ai_api_hostname }}
+          AI_API_TARGET_IP={{ ai_api_target_ip }}
+          AI_API_BASE_URL=http://{{ ai_api_hostname }}/v1/
