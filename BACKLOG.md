@@ -8,7 +8,7 @@
 
 ## Networking
 
-- Add AI VM networking mode in OpenTofu (`dhcp` or `static`).
+- After UDR7 cutover, set AI VM to static mode and lock DHCP reservation policy.
 - Add DHCP lease discovery helper for dynamic inventory updates.
 - Add optional UDR7 API integration for DHCP reservation automation.
 

@@ -12,3 +12,6 @@ infra/tofu/**/terraform.tfvars.json
 
 # OS/editor
 .DS_Store
+
+# Local tooling bootstrap
+.tools/

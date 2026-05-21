@@ -22,8 +22,10 @@ docker_vm_dns_servers = ["1.1.1.1", "8.8.8.8"]
 
 ai_vm_id                 = 203
 ai_vm_name               = "ai-vm"
-ai_vm_ipv4_cidr          = "192.168.6.253/22"
-ai_vm_gateway            = "192.168.4.1"
+ai_vm_network_mode       = "dhcp"
+# Set these only when ai_vm_network_mode = "static"
+# ai_vm_ipv4_cidr        = "192.168.6.253/22"
+# ai_vm_gateway          = "192.168.4.1"
 ai_vm_bridge             = "vmbr0"
 ai_vm_cpu_cores          = 12
 ai_vm_memory_mb          = 65536

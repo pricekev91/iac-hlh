@@ -4,8 +4,6 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
   content_type             = "iso"
   file_name                = var.ubuntu_image_file_name
   url                      = var.ubuntu_image_url
-  checksum_algorithm       = "sha256"
-  overwrite_unmanaged_file = false
 }
 
 resource "proxmox_virtual_environment_vm" "ai_vm" {
@@ -50,8 +48,8 @@ resource "proxmox_virtual_environment_vm" "ai_vm" {
 
     ip_config {
       ipv4 {
-        address = var.ipv4_cidr
-        gateway = var.ipv4_gateway
+        address = var.network_mode == "dhcp" ? "dhcp" : var.ipv4_cidr
+        gateway = var.network_mode == "dhcp" ? null : var.ipv4_gateway
       }
     }
 
@@ -70,4 +68,11 @@ resource "proxmox_virtual_environment_vm" "ai_vm" {
   }
 
   serial_device {}
+
+  lifecycle {
+    precondition {
+      condition     = var.network_mode == "dhcp" || (var.ipv4_cidr != null && var.ipv4_gateway != null)
+      error_message = "When network_mode is static, both ipv4_cidr and ipv4_gateway are required."
+    }
+  }
 }

@@ -4,8 +4,6 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
   content_type            = "iso"
   file_name               = var.ubuntu_image_file_name
   url                     = var.ubuntu_image_url
-  checksum_algorithm      = "sha256"
-  overwrite_unmanaged_file = false
 }
 
 resource "proxmox_virtual_environment_vm" "docker_host" {

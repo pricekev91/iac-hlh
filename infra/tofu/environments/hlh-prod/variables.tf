@@ -114,11 +114,26 @@ variable "ai_vm_name" {
 variable "ai_vm_ipv4_cidr" {
   description = "Static IP CIDR for AI VM."
   type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "ai_vm_gateway" {
   description = "Gateway for AI VM."
   type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "ai_vm_network_mode" {
+  description = "AI VM network mode: dhcp or static."
+  type        = string
+  default     = "dhcp"
+
+  validation {
+    condition     = contains(["dhcp", "static"], var.ai_vm_network_mode)
+    error_message = "ai_vm_network_mode must be one of: dhcp, static"
+  }
 }
 
 variable "ai_vm_bridge" {

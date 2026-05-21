@@ -32,6 +32,7 @@ module "ai_vm" {
   disk_datastore_id = var.proxmox_disk_datastore_id
   disk_size_gb      = var.ai_vm_disk_size_gb
   bridge            = var.ai_vm_bridge
+  network_mode      = var.ai_vm_network_mode
   ipv4_cidr         = var.ai_vm_ipv4_cidr
   ipv4_gateway      = var.ai_vm_gateway
   dns_servers       = var.ai_vm_dns_servers

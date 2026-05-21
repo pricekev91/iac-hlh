@@ -10,7 +10,7 @@ echo "[ai-vm-plan] OpenTofu init"
 tofu -chdir="${TOFU_ENV_DIR}" init
 
 echo "[ai-vm-plan] OpenTofu plan for AI VM"
-tofu -chdir="${TOFU_ENV_DIR}" plan -target=module.ai_vm "$@"
+tofu -chdir="${TOFU_ENV_DIR}" plan -input=false -target=module.ai_vm "$@"
 
 echo "[ai-vm-plan] Ansible syntax-check"
 ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/proxmox-gpu-passthrough.yml" --syntax-check

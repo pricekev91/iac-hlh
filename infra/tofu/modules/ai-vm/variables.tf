@@ -57,11 +57,26 @@ variable "bridge" {
 variable "ipv4_cidr" {
   description = "Static IPv4 address in CIDR format."
   type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "ipv4_gateway" {
   description = "Default IPv4 gateway."
   type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "network_mode" {
+  description = "AI VM network mode: dhcp or static."
+  type        = string
+  default     = "dhcp"
+
+  validation {
+    condition     = contains(["dhcp", "static"], var.network_mode)
+    error_message = "network_mode must be one of: dhcp, static"
+  }
 }
 
 variable "dns_servers" {

@@ -10,7 +10,7 @@ echo "[ai-vm-apply] OpenTofu init"
 tofu -chdir="${TOFU_ENV_DIR}" init
 
 echo "[ai-vm-apply] Create or update AI VM"
-tofu -chdir="${TOFU_ENV_DIR}" apply -auto-approve -target=module.ai_vm "$@"
+tofu -chdir="${TOFU_ENV_DIR}" apply -input=false -auto-approve -target=module.ai_vm "$@"
 
 echo "[ai-vm-apply] Attach AMD GPU to AI VM"
 ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/proxmox-gpu-passthrough.yml"
