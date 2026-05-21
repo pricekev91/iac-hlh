@@ -36,6 +36,7 @@ Steps 4-6 are manual by policy in this repo.
 - GPU passthrough playbook expects PCI IDs in ansible/playbooks/proxmox-gpu-passthrough.yml.
 - Benchmark, endpoint cutover, and LXC decommission are operator-run manual actions.
 - AI VM networking supports `dhcp` or `static` via `ai_vm_network_mode` in OpenTofu variables.
+- When using DHCP, discover the assigned AI VM IPv4 first and update ansible/inventory/hlh-prod.yml before running step 3.
 
 ## Manual Operator Checklist (Steps 4-6)
 

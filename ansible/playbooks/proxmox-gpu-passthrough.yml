@@ -5,8 +5,8 @@
   gather_facts: false
   vars:
     ai_vm_id: 203
-    gpu_hostpci_slot: "0000:03:00"
-    gpu_audio_hostpci_slot: "0000:03:00.1"
+    gpu_hostpci_slot: "c5:00.0"
+    gpu_audio_hostpci_slot: "c5:00.1"
   tasks:
     - name: Ensure VM is stopped before passthrough reconfiguration
       ansible.builtin.command: "qm stop {{ ai_vm_id }}"
@@ -14,7 +14,7 @@
       changed_when: false
 
     - name: Attach GPU function to AI VM
-      ansible.builtin.command: "qm set {{ ai_vm_id }} --hostpci0 {{ gpu_hostpci_slot }},pcie=1,x-vga=1"
+      ansible.builtin.command: "qm set {{ ai_vm_id }} --hostpci0 {{ gpu_hostpci_slot }},pcie=1"
 
     - name: Attach GPU audio function to AI VM
       ansible.builtin.command: "qm set {{ ai_vm_id }} --hostpci1 {{ gpu_audio_hostpci_slot }},pcie=1"
