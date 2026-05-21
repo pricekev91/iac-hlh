@@ -18,7 +18,4 @@ ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/an
 echo "[ai-vm-apply] Configure ROCm and AI engines"
 ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/configure-ai-vm.yml"
 
-echo "[ai-vm-apply] Run benchmark and health validation"
-ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/benchmark-ai-vm.yml"
-
 echo "[ai-vm-apply] Complete"

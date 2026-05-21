@@ -1,6 +1,0 @@
----
-- name: Run AI VM benchmark and validation checks
-  hosts: ai_vms
-  become: true
-  roles:
-    - ai_benchmark

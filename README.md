@@ -190,9 +190,7 @@ See `docs/hybrid-iac-migration.md` for details.
 The repository now supports a parallel migration from AI LXC to AI VM while keeping the existing path stable until cutover.
 
 - Build and configure AI VM: `./scripts/ai-vm-apply.bash`
-- Benchmark and validate: included in `ai-vm-apply.bash` and available in `ansible/playbooks/benchmark-ai-vm.yml`
-- Switch endpoint: `./scripts/ai-vm-cutover.bash`
-- Decommission legacy LXC (explicit confirm required): `./scripts/ai-vm-decommission-lxc.bash --confirm`
+- Steps 4-6 are intentionally manual-only (benchmark/validation, endpoint cutover, and LXC decommission)
 
 Modularity is a prime directive:
 

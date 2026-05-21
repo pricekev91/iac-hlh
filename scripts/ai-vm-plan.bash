@@ -15,8 +15,5 @@ tofu -chdir="${TOFU_ENV_DIR}" plan -target=module.ai_vm "$@"
 echo "[ai-vm-plan] Ansible syntax-check"
 ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/proxmox-gpu-passthrough.yml" --syntax-check
 ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/configure-ai-vm.yml" --syntax-check
-ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/benchmark-ai-vm.yml" --syntax-check
-ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/cutover-ai-endpoint.yml" --syntax-check
-ansible-playbook -i "${ROOT_DIR}/ansible/inventory/hlh-prod.yml" "${ROOT_DIR}/ansible/playbooks/decommission-ai-lxc.yml" --syntax-check
 
 echo "[ai-vm-plan] Complete"

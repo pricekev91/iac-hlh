@@ -15,9 +15,9 @@ Everything is modular. Runtime and orchestration provider changes must happen in
 1. Build AI VM in parallel
 2. Attach AMD GPU via passthrough
 3. Configure ROCm and AI engines with Ansible
-4. Benchmark and validate parity or superiority
-5. Switch traffic to AI VM endpoint
-6. Decommission LXC after burn-in
+4. Benchmark and validate parity or superiority (manual)
+5. Switch traffic to AI VM endpoint (manual)
+6. Decommission LXC after burn-in (manual)
 
 ## Commands
 
@@ -27,15 +27,11 @@ Plan:
 Apply:
 ./scripts/ai-vm-apply.bash
 
-Cutover:
-./scripts/ai-vm-cutover.bash
-
-Decommission legacy LXC (destructive):
-./scripts/ai-vm-decommission-lxc.bash --confirm
+Steps 4-6 are manual by policy in this repo.
 
 ## Notes
 
 - Default AI backend is llama.cpp for homelab use.
 - vLLM is optional and disabled by default.
 - GPU passthrough playbook expects PCI IDs in ansible/playbooks/proxmox-gpu-passthrough.yml.
-- Benchmark artifact is written to /var/log/ai-benchmark-latest.txt on the AI VM.
+- Benchmark, endpoint cutover, and LXC decommission are operator-run manual actions.
