@@ -2,6 +2,7 @@
 - name: Install base dependencies
   ansible.builtin.apt:
     name:
+      - qemu-guest-agent
       - ca-certificates
       - curl
       - gnupg
@@ -9,6 +10,12 @@
       - jq
     state: present
     update_cache: true
+
+- name: Ensure qemu-guest-agent service is enabled and running
+  ansible.builtin.service:
+    name: qemu-guest-agent
+    enabled: true
+    state: started
 
 - name: Ensure apt keyrings directory exists
   ansible.builtin.file:
