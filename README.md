@@ -201,3 +201,38 @@ Modularity is a prime directive:
 - AI backend switch lives in `ansible/roles/ai_rocm_engine/defaults/main.yml` (`ai_backend_provider`, default `llama_cpp`)
 
 See `docs/ai-vm-rocm-migration.md` for the full phase-by-phase flow.
+
+## Infrastructure Philosophy
+
+This repository follows:
+
+- idempotent provisioning (safe to re-run)
+- immutable infrastructure (rebuild over patch)
+- declarative desired-state configuration
+- modular, environment-agnostic design (Docker, Dockhand, Kubernetes)
+
+## Orchestrator Skeleton Layout
+
+The repo includes an orchestrator-neutral skeleton so provider changes happen in one place:
+
+- `infra/docker` for Docker Compose workflows
+- `infra/dockhand` for Dockhand stack workflows
+- `infra/k8s` for Kubernetes manifests
+- `infra/modules` for shared reusable components (`logging`, `storage`, `networking`)
+- `config/defaults.yaml` for baseline orchestrator defaults
+
+Task tracking intentionally stays out of README:
+
+- `TODO.md` for active short-horizon tasks
+- `BACKLOG.md` for deferred platform work
+- `CHANGELOG.md` for released and pending change records
+
+### Quick Start (Meta Orchestrator)
+
+```bash
+./scripts/apply.sh
+./scripts/verify.sh
+./scripts/destroy.sh
+```
+
+Override orchestrator per run using `ORCH=docker|dockhand|k8s`.
