@@ -1,6 +1,0 @@
----
-- name: Configure Docker host guest
-  hosts: docker_hosts
-  become: true
-  roles:
-    - container_runtime

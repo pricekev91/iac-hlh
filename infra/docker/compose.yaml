@@ -1,6 +1,0 @@
-services:
-  hello:
-    image: busybox:1.36
-    container_name: hlh-hello
-    command: ["sh", "-c", "while true; do echo hlh-ready; sleep 300; done"]
-    restart: unless-stopped
