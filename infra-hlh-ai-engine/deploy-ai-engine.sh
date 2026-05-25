@@ -381,7 +381,7 @@ main() {
     local vmid="101"
     local hostname="hlh-ai-engine"
     local ostemplate="local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst"
-    local storage="Raidz1-6tb"
+    local storage="raidz1-6tb"
     local rootfs_size_gb="250"
     local bridge="vmbr0"
     local ip_config="dhcp"
