@@ -2,17 +2,16 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Standalone bootstrap script for AI engine LXC
 MODE="apply"
 
 usage() {
     cat <<'EOF'
 Usage:
-  ./apply.bash inventory/<host>.yaml
-  ./apply.bash --plan inventory/<host>.yaml
+    ./deploy-ai-engine.sh [--plan]
 
-Modes:
-  --plan   Validate inventory and print the Proxmox reconciliation plan without executing pct changes.
+This script provisions a new AI engine LXC container on Proxmox with hardcoded/default values.
 EOF
 }
 
@@ -378,121 +377,53 @@ ensure_engine_recreated_for_llama_stack() {
 }
 
 main() {
-    local inventory_path
-    local platform_path="$SCRIPT_DIR/platforms/engine.yaml"
-    local vmid
-    local hostname
-    local ostemplate
-    local storage
-    local rootfs_size_gb
-    local bridge
-    local ip_config
-    local gateway
-    local cores
-    local memory_mb
-    local swap_mb
-    local unprivileged
-    local onboot
-    local startup
-    local tags
-    local features
-    local models_source
-    local state_source
-    local scratch_source
-    local enable_gpu
-    local card0_path
-    local render_path
-    local webui_port
-    local localai_port
-    local default_model
-    local default_model_url
-    local pull_default_model
-    local llama_context_size
-    local llama_gpu_layers
-    local llama_threads
-    local llama_batch_size
-    local llama_parallel
-    local llama_flash_attn
-    local llama_no_mmap
-    local llama_mlock
-    local llama_cache_type
-    local llama_model_path
-
-    if [[ $# -lt 1 || $# -gt 2 ]]; then
-        usage
-        exit 1
-    fi
+    # Hardcoded/default values (edit as needed)
+    local vmid="101"
+    local hostname="hlh-ai-engine"
+    local ostemplate="local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst"
+    local storage="Raidz1-6tb"
+    local rootfs_size_gb="250"
+    local bridge="vmbr0"
+    local ip_config="dhcp"
+    local gateway=""
+    local cores="12"
+    local memory_mb="49152"
+    local swap_mb="4096"
+    local unprivileged="0"
+    local onboot="1"
+    local startup="order=20,up=15"
+    local tags="ai-appliance;shared;engine"
+    local features="nesting=1,keyctl=1"
+    local models_source="/home/pricekev/ai/models"
+    local state_source="/home/pricekev/ai/state"
+    local scratch_source="/home/pricekev/ai/scratch"
+    local enable_gpu="1"
+    local card0_path="/dev/dri/card0"
+    local render_path="/dev/dri/renderD128"
+    local webui_port="8080"
+    local localai_port="3000"
+    local default_model="qwen2.5-coder:7b"
+    local default_model_url=""
+    local pull_default_model="false"
+    local llama_context_size="8192"
+    local llama_gpu_layers="99"
+    local llama_threads="12"
+    local llama_batch_size="512"
+    local llama_parallel="1"
+    local llama_flash_attn="false"
+    local llama_no_mmap="false"
+    local llama_mlock="false"
+    local llama_cache_type=""
+    local llama_model_path="/srv/ai/models/default.gguf"
 
     if [[ "${1-}" == "--plan" ]]; then
         MODE="plan"
-        shift
     fi
-
-    inventory_path="${1-}"
-    [[ -n "$inventory_path" ]] || fail "Inventory path is required"
 
     require_command awk
     require_command pct
 
-    load_yaml_into_config "$platform_path"
-    load_yaml_into_config "$inventory_path"
-
-    vmid="$(config_get engine.vmid)"
-    hostname="$(config_get engine.hostname engine)"
-    ostemplate="$(config_get proxmox.ostemplate)"
-    storage="$(config_get proxmox.rootfs_storage)"
-    rootfs_size_gb="$(config_get engine.rootfs_size_gb 64)"
-    bridge="$(config_get proxmox.bridge vmbr0)"
-    ip_config="$(config_get engine.ipv4 dhcp)"
-    gateway="$(config_get proxmox.gateway)"
-    cores="$(config_get engine.cores 8)"
-    memory_mb="$(config_get engine.memory_mb 32768)"
-    swap_mb="$(config_get engine.swap_mb 4096)"
-    unprivileged="$(bool_to_pct "$(config_get engine.unprivileged false)")"
-    onboot="$(bool_to_pct "$(config_get engine.onboot true)")"
-    startup="$(config_get engine.startup 'order=20,up=15')"
-    tags="$(config_get engine.tags 'ai-appliance;shared;engine')"
-    features="$(config_get engine.features 'nesting=1,keyctl=1')"
-    models_source="$(config_get storage.models_host_path)"
-    state_source="$(config_get storage.state_host_path)"
-    scratch_source="$(config_get storage.scratch_host_path)"
-    enable_gpu="$(config_get engine.enable_gpu true)"
-    card0_path="$(config_get engine.gpu.card0 /dev/dri/card0)"
-    render_path="$(config_get engine.gpu.render /dev/dri/renderD128)"
-    webui_port="$(config_get engine.webui_port 8080)"
-    localai_port="$(config_get engine.localai_port 3000)"
-    default_model="$(config_get engine.default_model qwen2.5-coder:7b)"
-    default_model_url="$(config_get engine.default_model_url '')"
-    pull_default_model="$(config_get engine.pull_default_model false)"
-    llama_context_size="$(config_get engine.llama_context_size 8192)"
-    llama_gpu_layers="$(config_get engine.llama_gpu_layers 99)"
-    llama_threads="$(config_get engine.llama_threads 12)"
-    llama_batch_size="$(config_get engine.llama_batch_size 512)"
-    llama_parallel="$(config_get engine.llama_parallel 1)"
-    llama_flash_attn="$(config_get engine.llama_flash_attn false)"
-    llama_no_mmap="$(config_get engine.llama_no_mmap false)"
-    llama_mlock="$(config_get engine.llama_mlock false)"
-    llama_cache_type="$(config_get engine.llama_cache_type '')"
-    llama_model_path="$(config_get engine.default_model_path /srv/ai/models/default.gguf)"
-
-    [[ -n "$vmid" ]] || fail "engine.vmid must be set in inventory or platform definition"
-    [[ -n "$ostemplate" ]] || fail "proxmox.ostemplate must be set in inventory"
-    [[ -n "$storage" ]] || fail "proxmox.rootfs_storage must be set in inventory"
-    [[ -n "$models_source" ]] || fail "storage.models_host_path must be set in inventory"
-    [[ -n "$state_source" ]] || fail "storage.state_host_path must be set in inventory"
-    [[ -n "$scratch_source" ]] || fail "storage.scratch_host_path must be set in inventory"
-
-    if [[ "$(bool_to_pct "$enable_gpu")" == "1" && "$unprivileged" == "1" ]]; then
-        fail "engine.enable_gpu=true requires a privileged LXC in this stack (set engine.unprivileged: false)."
-    fi
-
-    if [[ -n "$(config_get presentation.vmid)" || -n "$(config_get trashpanda_app.vmid)" ]]; then
-        fail "Legacy inventory keys detected (presentation.* or trashpanda_app.*). Remove those sections to use the single-engine stack."
-    fi
-
-    ensure_engine_recreated_for_llama_stack "$vmid" "localai-stack" "$inventory_path"
-
-    log "Reconciling shared AI engine LXC on HLH"
+    log "Reconciling AI engine LXC (bootstrap mode)"
     ensure_container_base "engine" "$vmid" "$hostname" "$ostemplate" "$storage" "$rootfs_size_gb" "$bridge" "$ip_config" "$gateway" "$cores" "$memory_mb" "$swap_mb" "$unprivileged" "$onboot" "$tags" "$features" "$startup"
     ensure_engine_mounts "$vmid" "$models_source" "$state_source" "$scratch_source"
     ensure_engine_gpu_devices "$vmid" "$enable_gpu" "$card0_path" "$render_path"
@@ -502,7 +433,7 @@ main() {
     fi
 
     provision_engine_runtime "$vmid" "$webui_port" "$localai_port" "$default_model" "$default_model_url" "$pull_default_model" "$llama_context_size" "$llama_gpu_layers" "$llama_threads" "$llama_batch_size" "$llama_parallel" "$llama_flash_attn" "$llama_no_mmap" "$llama_mlock" "$llama_cache_type" "$llama_model_path"
-    log "Engine LXC reconciliation complete: vmid=$vmid hostname=$hostname webui_port=$webui_port localai_port=$localai_port"
+    log "Engine LXC bootstrap complete: vmid=$vmid hostname=$hostname webui_port=$webui_port localai_port=$localai_port"
 }
 
 main "$@"
