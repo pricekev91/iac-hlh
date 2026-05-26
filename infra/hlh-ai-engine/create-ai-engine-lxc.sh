@@ -41,7 +41,7 @@ pct create $LXC_ID $LXC_IMAGE \
 
     echo "[2/6] Creating privileged Ubuntu 24.04 LXC ($LXC_ID, $LXC_NAME) on $POOL..."
     pct create $LXC_ID $LXC_IMAGE \
-        -rootfs $POOL:$LXC_ROOTFS_SIZE \
+        -rootfs ${POOL}:${LXC_ROOTFS_SIZE} \
         -hostname $LXC_HOSTNAME \
         -memory $LXC_MEMORY \
         -cores $LXC_CORES \
@@ -49,7 +49,7 @@ pct create $LXC_ID $LXC_IMAGE \
         -net0 name=eth0,bridge=vmbr0,ip=dhcp \
         -unprivileged 0 \
         -onboot 1 \
-        -mp0 $MODEL_HOST_DIR,mp=$MODEL_LXC_DIR \
+        -mp0 ${MODEL_HOST_DIR},mp=${MODEL_LXC_DIR} \
         -description "llama.cpp AI engine with ROCm, model storage on $POOL"
 
     echo "[3/6] Adding GPU passthrough devices..."
