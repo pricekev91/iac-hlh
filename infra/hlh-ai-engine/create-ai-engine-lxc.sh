@@ -42,8 +42,8 @@ sleep 5
 
 echo "[5/6] Copying and running bootstrap script inside LXC..."
 pct exec $LXC_ID -- mkdir -p /root/ai-engine-bootstrap
-pct push $LXC_ID ai-engine-bootstrap.sh /root/ai-engine-bootstrap/ai-engine-bootstrap.sh --perms 0755
-pct exec $LXC_ID -- bash /root/ai-engine-bootstrap/ai-engine-bootstrap.sh
+pct push $LXC_ID configure-ai-engine-inside-lxc.sh /root/ai-engine-bootstrap/configure-ai-engine-inside-lxc.sh --perms 0755
+pct exec $LXC_ID -- bash /root/ai-engine-bootstrap/configure-ai-engine-inside-lxc.sh
 
 echo "[6/6] Deployment complete. LXC $LXC_ID ($LXC_NAME) is running."
 echo "Model storage: $MODEL_HOST_DIR (host) <-> $MODEL_LXC_DIR (container) on $POOL"
