@@ -22,11 +22,10 @@ apt-get install -y --no-install-recommends \
   build-essential git cmake pkg-config \
   python3 python3-pip curl wget unzip \
   libopenblas-dev libssl-dev \
-  rocm-hip-libraries-dev rocm-hip-runtime hipblas hiprand \
-  vulkan-tools vulkan-validationlayers-dev libvulkan-dev
+  rocm-hip-libraries-dev rocm-hip-runtime hipblas hiprand
 
 # --- 2. BUILD LATEST LLAMA.CPP ---
-echo "[2/7] Cloning and building llama.cpp (main branch, HIP/ROCm + Vulkan)..."
+echo "[2/7] Cloning and building llama.cpp (main branch, HIP/ROCm only)..."
 if [ ! -d "$LLAMA_CPP_DIR" ]; then
   git clone --depth=1 "$LLAMA_CPP_REPO" "$LLAMA_CPP_DIR"
 else
@@ -35,8 +34,8 @@ fi
 cd "$LLAMA_CPP_DIR"
 # Clean previous builds
 make clean || true
-# Build with HIP/ROCm and Vulkan
-HSA_OVERRIDE_GFX_VERSION=11.0.0 make LLAMA_HIP=1 LLAMA_VULKAN=1 -j$(nproc)
+# Build with HIP/ROCm only (no Vulkan fallback)
+HSA_OVERRIDE_GFX_VERSION=11.0.0 make LLAMA_HIP=1 -j$(nproc)
 
 # --- 3. MODEL STORAGE & DOWNLOAD ---
 echo "[3/7] Ensuring model directory and downloading default model if needed..."
