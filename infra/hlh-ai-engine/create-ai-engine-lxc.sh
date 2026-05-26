@@ -41,7 +41,7 @@ pct create $LXC_ID $LXC_IMAGE \
 
     echo "[2/6] Creating privileged Ubuntu 24.04 LXC ($LXC_ID, $LXC_NAME) on $POOL..."
     pct create $LXC_ID $LXC_IMAGE \
-        -rootfs ${POOL}:${LXC_ROOTFS_SIZE} \
+        --rootfs ${POOL}:subvol-${LXC_ID}-disk-0,size=${LXC_ROOTFS_SIZE} \
         -hostname $LXC_HOSTNAME \
         -memory $LXC_MEMORY \
         -cores $LXC_CORES \
