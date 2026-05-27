@@ -1,8 +1,9 @@
+
 #!/usr/bin/env bash
 # configure-ai-engine-inside-lxc.sh
-# Version: 0.6.2
+# Version: 0.7.0
 # Description: Bootstrap llama.cpp AI engine on Ubuntu 24.04 LXC with ROCm passthrough
-# Target GPU: AMD Radeon 890M (gfx1150) on Proxmox 9.x privileged LXC
+# Target GPU: AMD Radeon 890M (gfx1150/Strix Halo) on Proxmox 9.x privileged LXC
 # Requirements: Run as root inside privileged LXC with GPU passthrough and /srv/ai/models bind mount
 # Changelog:
 #   0.1.0 - Initial version
@@ -11,7 +12,10 @@
 #   0.4.0 - Added rocm-hip-runtime-dev, Vulkan support, hipcc verification
 #   0.5.0 - Fixed HIP compiler: use HIPCXX env var pointing to clang, not hipcc wrapper
 #   0.6.0 - Added glslc, pre-build checks, fixed LD_LIBRARY_PATH unbound variable
-#   0.6.2 - Disabled Vulkan (missing SPIRV-Headers blocks build); ROCm only for now
+#   0.6.2 - Disabled Vulkan (missing SPIRV-Headers); ROCm only
+#   0.7.0 - Upgraded to ROCm 7.2.3 for native gfx1150 (Strix Halo) rocBLAS support
+#            Fixed -ngl flag, removed --flash-attn, added render/video group for root
+#            Fixed KFD cgroup device major (511, not 238) documented in create script
 
 set -euo pipefail
 
@@ -24,8 +28,9 @@ LLAMA_CPP_DIR="/opt/llama.cpp"
 SERVICE_NAME="ai-engine"
 SYSTEMD_SERVICE="/etc/systemd/system/${SERVICE_NAME}.service"
 SWITCH_SCRIPT="/usr/local/bin/switch-model.sh"
-GFX_VERSION="11.5.0"   # gfx1150 = HSA version 11.5.0
+GFX_VERSION="11.5.0"   # gfx1150 native — rocBLAS 7.2.3 supports it
 ROCM_PATH="/opt/rocm"
+ROCM_VERSION="7.2.3"
 
 # --- 1. BASE DEPENDENCIES ---
 echo "[1/7] Installing base dependencies..."
@@ -35,14 +40,21 @@ apt-get install -y --no-install-recommends \
   python3 python3-pip curl wget unzip \
   libopenblas-dev libssl-dev ca-certificates gnupg
 
-# --- 1b. ADD ROCM REPO ---
-echo "[1/7] Adding ROCm repository..."
-wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor > /usr/share/keyrings/rocm-archive-keyring.gpg
-echo "deb [arch=amd64 trusted=yes] https://repo.radeon.com/rocm/apt/6.4 noble main" > /etc/apt/sources.list.d/rocm.list
+# --- 1b. ADD ROCM 7.2.3 REPO ---
+echo "[1/7] Adding ROCm ${ROCM_VERSION} repository..."
+mkdir -p /etc/apt/keyrings
+wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | \
+  gpg --dearmor | tee /etc/apt/keyrings/rocm.gpg > /dev/null
+
+tee /etc/apt/sources.list.d/rocm.list << EOF
+deb [arch=amd64 trusted=yes] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} noble main
+deb [arch=amd64 trusted=yes] https://repo.radeon.com/graphics/${ROCM_VERSION}/ubuntu noble main
+EOF
+
 echo 'APT::Key::GPGCommand "/usr/bin/gpg";' > /etc/apt/apt.conf.d/99gpg-override
 
 # Pin AMD repo over Ubuntu's bundled ROCm packages
-cat > /etc/apt/preferences.d/rocm-pin <<'PIN'
+tee /etc/apt/preferences.d/rocm-pin << 'PIN'
 Package: *
 Pin: origin repo.radeon.com
 Pin-Priority: 1001
@@ -61,9 +73,13 @@ apt-get install -y --no-install-recommends \
   hipblas-dev \
   rocblas-dev
 
+# Add root to render and video groups for GPU access
+usermod -aG render root
+usermod -aG video root
+
 # --- ROCm Environment Setup ---
 echo "[1/7] Setting up ROCm environment..."
-cat > /etc/profile.d/rocm.env <<EOF
+tee /etc/profile.d/rocm.env << EOF
 export PATH=\$PATH:${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin
 export LD_LIBRARY_PATH=${ROCM_PATH}/lib:\${LD_LIBRARY_PATH:-}
 export ROCM_PATH=${ROCM_PATH}
@@ -83,7 +99,7 @@ echo "HIP root path:  ${HIP_PATH_VAL}"
 [ -f "${HIPCXX_PATH}" ] || { echo "ERROR: HIP clang not found at ${HIPCXX_PATH}"; exit 1; }
 
 # --- 2. BUILD LLAMA.CPP (ROCm only) ---
-echo "[2/7] Cloning and building llama.cpp (ROCm only)..."
+echo "[2/7] Cloning and building llama.cpp (ROCm gfx1150)..."
 if [ ! -d "$LLAMA_CPP_DIR" ]; then
   git clone --depth=1 "$LLAMA_CPP_REPO" "$LLAMA_CPP_DIR"
 else
@@ -115,7 +131,7 @@ fi
 
 # --- 4. SYSTEMD SERVICE ---
 echo "[4/7] Creating systemd service for llama-server..."
-cat > "$SYSTEMD_SERVICE" <<UNIT
+cat > "$SYSTEMD_SERVICE" << UNIT
 [Unit]
 Description=llama.cpp AI Engine (llama-server) - native web UI on port 8080
 After=network.target
@@ -131,9 +147,11 @@ Environment=HIP_PATH=${ROCM_PATH}
 ExecStart=${LLAMA_CPP_DIR}/build/bin/llama-server \
   --model ${MODEL_DIR}/${DEFAULT_MODEL_FILE} \
   --host 0.0.0.0 --port 8080 \
-  --ctx-size 32768 --ngl 99 --flash-attn \
-  --batch-size 64
+  --ctx-size 8192 \
+  -ngl 99 \
+  --batch-size 512
 Restart=on-failure
+RestartSec=10
 User=root
 
 [Install]
@@ -142,7 +160,7 @@ UNIT
 
 # --- 5. MODEL SWITCH SCRIPT ---
 echo "[5/7] Creating interactive model switcher: $SWITCH_SCRIPT..."
-cat > "$SWITCH_SCRIPT" <<'EOS'
+cat > "$SWITCH_SCRIPT" << 'EOS'
 #!/usr/bin/env bash
 MODEL_DIR="/srv/ai/models"
 SERVICE="ai-engine"
@@ -203,8 +221,8 @@ echo ""
 echo "[Service status]"
 systemctl status "$SERVICE_NAME" --no-pager
 echo ""
-echo "[Bootstrap complete - v0.6.2]"
+echo "[Bootstrap complete - v0.7.0]"
 echo "  Native llama.cpp web UI : http://<container-ip>:8080"
 echo "  Switch models with      : switch-model.sh"
-echo "  Force ROCm              : add '--device ROCm0' to ExecStart in ${SYSTEMD_SERVICE}"
-echo "  NOTE: Vulkan disabled in this build - enable in v0.7 once ROCm is verified"
+echo "  GPU device              : gfx1150 (AMD Radeon 890M)"
+echo "  ROCm version            : ${ROCM_VERSION}"

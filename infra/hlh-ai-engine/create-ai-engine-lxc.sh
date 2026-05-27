@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# create-ai-engine-lxc.sh
+# Version: 0.3.1
+# Description: Creates privileged Ubuntu 24.04 LXC on Proxmox with GPU passthrough for llama.cpp
+# Changelog:
+#   0.1.0 - Initial version
+#   0.2.0 - Fixed storage syntax, double-dash flags, GPU passthrough via lxc.cgroup2
+#   0.3.0 - Fixed KFD cgroup device major 511 (not 238), updated ROCm host to 7.2.3
+#   0.3.1 - Fixed unbound ROCM_VERSION variable
+
 set -euo pipefail
 
 # -----------------------------
@@ -14,6 +23,7 @@ MODEL_LXC_DIR="/srv/ai/models"
 LXC_ROOTFS_SIZE="64"
 LXC_MEMORY="49152"
 LXC_CORES="12"
+ROCM_VERSION="7.2.3"
 
 # -----------------------------
 # STEP 1 — Model storage directory
@@ -38,7 +48,7 @@ pct create "${LXC_ID}" "${LXC_IMAGE}" \
     --unprivileged 0 \
     --onboot 1 \
     --mp0 "${MODEL_HOST_DIR},mp=${MODEL_LXC_DIR}" \
-    --description "llama.cpp AI engine with ROCm, model storage on ${POOL}"
+    --description "llama.cpp AI engine with ROCm ${ROCM_VERSION}, model storage on ${POOL}"
 
 # -----------------------------
 # STEP 3 — GPU passthrough (must happen BEFORE start)
@@ -47,8 +57,9 @@ echo "[3/6] Adding GPU/ROCm device passthrough to LXC config..."
 cat >> "/etc/pve/lxc/${LXC_ID}.conf" <<LXCCONF
 
 # GPU passthrough — DRI (render) + KFD (ROCm/HIP compute)
+# Note: KFD major device number is 511 on this host (verified via ls -la /dev/kfd)
 lxc.cgroup2.devices.allow: c 226:* rwm
-lxc.cgroup2.devices.allow: c 238:0 rwm
+lxc.cgroup2.devices.allow: c 511:0 rwm
 lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
 lxc.mount.entry: /dev/kfd dev/kfd none bind,optional,create=file
 LXCCONF
