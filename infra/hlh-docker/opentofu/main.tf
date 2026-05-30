@@ -1,8 +1,8 @@
 terraform {
   required_providers {
     proxmox = {
-      source  = "Telmate/proxmox"
-      version = ">= 2.11.0"
+      source  = "telmate/proxmox"
+      version = ">= 2.7.2"
     }
   }
 }
@@ -26,7 +26,6 @@ resource "proxmox_lxc" "hlh_docker" {
   cores       = var.cores
   memory      = var.memory
   swap        = 1024
-  rootfs      = "RAIDZ1-6TB:32"
 
   unprivileged = true
   start        = true
@@ -40,36 +39,20 @@ resource "proxmox_lxc" "hlh_docker" {
   network {
     name   = "eth0"
     bridge = "vmbr0"
-    ipv4   = "dhcp"
+    ip     = "dhcp"
     tag    = var.network_tag
   }
 
-  # Unprivileged LXC: requires password set for root
-  passwords {
-    root = var.lxc_root_password
+  password = var.lxc_root_password
+
+  rootfs {
+    storage = "RaidZ1-6TB"
+    size    = "32G"
   }
 
   # ZFS mounts for persistent data
   # /srv/ct/hlh-docker (docker data directory)
   # /srv/ct/openspeedtest (reserved for future app)
-  unmounted = "1"
-
-  mounts {
-    volume    = "RAIDZ1-6TB"
-    mountpoint = "mp0"
-    mp        = "/srv/ct/hlh-docker"
-    size      = "64G"
-  }
-
-  mounts {
-    volume    = "RAIDZ1-6TB"
-    mountpoint = "mp1"
-    mp        = "/srv/ct/openspeedtest"
-    size      = "32G"
-  }
-
-  # VLAN-aware bridge with optional tag for future segmentation
-  # Currently untagged (tag = 0 = off), ready for VLAN tagging later
 }
 
 output "lxc_vmid" {

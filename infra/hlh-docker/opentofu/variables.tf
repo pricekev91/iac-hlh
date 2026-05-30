@@ -21,8 +21,9 @@ variable "target_node" {
 }
 
 variable "ostemplate" {
-  description = "LXC OS template (e.g., 'local:vztmpl/ubuntu-22.04-standard_latest.tar.zst')"
+  description = "LXC OS template (e.g., 'local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst')"
   type        = string
+  default     = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 }
 
 variable "cores" {

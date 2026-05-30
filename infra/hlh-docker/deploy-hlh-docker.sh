@@ -19,7 +19,7 @@ export TF_VAR_pm_api_url="${TF_VAR_pm_api_url:-https://192.168.1.10:8006/api2/js
 export TF_VAR_pm_api_token_id="${TF_VAR_pm_api_token_id:-}"
 export TF_VAR_pm_api_token_secret="${TF_VAR_pm_api_token_secret:-}"
 export TF_VAR_target_node="${TF_VAR_target_node:-prox01}"
-export TF_VAR_ostemplate="${TF_VAR_ostemplate:-local:vztmpl/ubuntu-24.04-standard_latest.tar.zst}"
+export TF_VAR_ostemplate="${TF_VAR_ostemplate:-local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst}"
 export TF_VAR_cores="${TF_VAR_cores:-4}"
 export TF_VAR_memory="${TF_VAR_memory:-4096}"
 export TF_VAR_network_tag="${TF_VAR_network_tag:-0}"
@@ -43,11 +43,11 @@ fi
 
 # Run OpenTofu
 echo "=== Initializing OpenTofu ==="
-opentofu init
+tofu init
 
 echo ""
 echo "=== Plan ==="
-opentofu plan \
+tofu plan \
     -var "pm_api_url=${TF_VAR_pm_api_url}" \
     -var "pm_api_token_id=${TF_VAR_pm_api_token_id}" \
     -var "pm_api_token_secret=${TF_VAR_pm_api_token_secret}" \
@@ -59,7 +59,7 @@ echo ""
 read -rp "Apply hlh-docker LXC (vmid 102)? [y/N] " confirm
 if [[ "$confirm" =~ ^[Yy]$ ]]; then
     echo "=== Applying ==="
-    opentofu apply \
+    tofu apply \
         -auto-approve \
         -var "pm_api_url=${TF_VAR_pm_api_url}" \
         -var "pm_api_token_id=${TF_VAR_pm_api_token_id}" \
