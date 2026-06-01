@@ -8,9 +8,9 @@ terraform {
 }
 
 provider "proxmox" {
-  pm_api_url      = var.pm_api_url
-  pm_api_token_id = var.pm_api_token_id
-  pm_api_token_secret = var.pm_api_token_secret
+  pm_api_url   = var.pm_api_url
+  pm_user      = "root@pam"
+  pm_password  = var.pm_root_password
   pm_tls_insecure = true
 }
 
@@ -39,7 +39,8 @@ resource "proxmox_lxc" "hlh_docker" {
   network {
     name   = "eth0"
     bridge = "vmbr0"
-    ip     = "dhcp"
+    ip     = "192.168.1.13/24"
+    gw     = "192.168.1.1"
     tag    = var.network_tag
   }
 

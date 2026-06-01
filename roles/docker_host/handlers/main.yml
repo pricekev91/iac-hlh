@@ -1,0 +1,18 @@
+---
+- name: restart dockhand
+  ansible.builtin.systemd:
+    name: dockhand
+    state: restarted
+    daemon_reload: true
+
+- name: reload docker daemon
+  ansible.builtin.systemd:
+    name: docker
+    state: reloaded
+
+- name: start dockhand container
+  community.docker.docker_container:
+    name: "{{ dockhand_container_name }}"
+    image: "{{ dockhand_image }}"
+    restart_policy: unless-stopped
+    restart: true

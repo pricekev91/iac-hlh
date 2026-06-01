@@ -1,0 +1,41 @@
+---
+- name: Download and install LazyDocker binary
+  ansible.builtin.get_url:
+    url: https://github.com/jesseduffield/lazydocker/releases/latest/download/lazydocker_Linux_x86_64.tar.gz
+    dest: /tmp/lazydocker.tar.gz
+    mode: "0644"
+    checksum: "{{ lazydocker_checksum | default('skip') }}"
+
+- name: Extract LazyDocker binary
+  ansible.builtin.unarchive:
+    src: /tmp/lazydocker.tar.gz
+    dest: /tmp/
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+
+- name: Install LazyDocker to /usr/local/bin
+  ansible.builtin.copy:
+    src: /tmp/lazydocker
+    dest: /usr/local/bin/lazydocker
+    mode: "0755"
+    remote_src: true
+
+- name: Clean up LazyDocker archive
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/lazydocker.tar.gz
+    - /tmp/lazydocker
+
+- name: Verify LazyDocker installation
+  ansible.builtin.command:
+    cmd: lazydocker --version
+  register: lazydocker_version
+  changed_when: false
+  check_mode: false
+
+- name: Show LazyDocker version
+  ansible.builtin.debug:
+    msg: "LazyDocker installed: {{ lazydocker_version.stdout }}"

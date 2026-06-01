@@ -1,0 +1,63 @@
+---
+- name: Deploy Docker Engine
+  hosts: hlh_docker
+  become: true
+  vars:
+    homelab_user: pricekev
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Clean up broken Docker apt repository if present
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/docker.list
+        state: absent
+
+    - name: Install system prerequisites
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - python3-pip
+          - git
+        state: present
+
+    - name: Ensure homelab user exists
+      ansible.builtin.user:
+        name: "{{ homelab_user }}"
+        shell: /bin/bash
+        groups: sudo
+        append: true
+        createhome: true
+
+    - name: Configure passwordless sudo for homelab user
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/{{ homelab_user }}
+        line: "{{ homelab_user }} ALL=(ALL) NOPASSWD: ALL"
+        create: true
+        mode: "0644"
+        validate: "visudo -cf %s"
+
+    - name: Install Docker Engine
+      ansible.builtin.include_role:
+        name: docker-engine
+
+    - name: Add user to docker group
+      ansible.builtin.user:
+        name: "{{ homelab_user }}"
+        groups: docker
+        append: true
+
+    - name: Install Dockhand
+      ansible.builtin.include_role:
+        name: dockhand
+
+    - name: Install LazyDocker
+      ansible.builtin.include_role:
+        name: lazydocker

@@ -23,7 +23,7 @@ variable "target_node" {
 variable "ostemplate" {
   description = "LXC OS template (e.g., 'local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst')"
   type        = string
-  default     = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
+  default     = "local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst"
 }
 
 variable "cores" {
@@ -46,6 +46,12 @@ variable "network_tag" {
 
 variable "lxc_root_password" {
   description = "Root password for the unprivileged LXC (required for container login)"
+  type        = string
+  sensitive   = true
+}
+
+variable "pm_root_password" {
+  description = "Proxmox root@pam password for API authentication"
   type        = string
   sensitive   = true
 }

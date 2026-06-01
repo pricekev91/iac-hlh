@@ -1,0 +1,12 @@
+---
+docker_host_ip: "192.168.1.13"
+docker_ce_channel: "stable"
+docker_ce_version: ""
+
+dockhand_image: "fnsys/dockhand:latest"
+dockhand_container_name: "dockhand"
+dockhand_host_port: 80
+dockhand_host_ip: "{{ docker_host_ip }}"
+
+lazydocker_install: true
+lazydocker_version: "0.19.1"
