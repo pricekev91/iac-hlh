@@ -54,7 +54,7 @@ run_opentofu_stage() {
 
     echo "=== Initializing OpenTofu ==="
     if [[ "$OFFLINE" -eq 1 ]]; then
-        tofu init -lockfile=readonly
+        tofu init -get=false
     else
         tofu init
     fi
@@ -140,7 +140,7 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-if [[ "$MODE" == "plan" && "$RUN_TF" -eq 0 ]]; then
+if [[ "$MODE" == "plan" && "$RUN_TF" -eq 0 && "$RUN_CONFIG" -eq 0 ]]; then
     echo "ERROR: --plan requires OpenTofu stage to run." >&2
     exit 1
 fi
