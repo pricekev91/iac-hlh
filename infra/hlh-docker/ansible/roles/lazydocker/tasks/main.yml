@@ -5,6 +5,7 @@
     dest: /tmp/lazydocker.tar.gz
     mode: "0644"
     checksum: "{{ lazydocker_checksum | default('skip') }}"
+  when: not hlh_offline
 
 - name: Extract LazyDocker binary
   ansible.builtin.unarchive:
@@ -13,6 +14,7 @@
     remote_src: true
     extra_opts:
       - --strip-components=1
+  when: not hlh_offline
 
 - name: Install LazyDocker to /usr/local/bin
   ansible.builtin.copy:
@@ -20,6 +22,7 @@
     dest: /usr/local/bin/lazydocker
     mode: "0755"
     remote_src: true
+  when: not hlh_offline
 
 - name: Clean up LazyDocker archive
   ansible.builtin.file:
@@ -28,6 +31,20 @@
   loop:
     - /tmp/lazydocker.tar.gz
     - /tmp/lazydocker
+  when: not hlh_offline
+
+- name: Verify LazyDocker binary exists in offline mode
+  ansible.builtin.stat:
+    path: /usr/local/bin/lazydocker
+  register: lazydocker_binary
+  when: hlh_offline
+
+- name: Fail if LazyDocker is missing in offline mode
+  ansible.builtin.fail:
+    msg: "Offline mode requested, but /usr/local/bin/lazydocker is not present. Install it once online first."
+  when:
+    - hlh_offline
+    - not lazydocker_binary.stat.exists
 
 - name: Verify LazyDocker installation
   ansible.builtin.command:

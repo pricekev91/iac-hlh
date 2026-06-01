@@ -4,12 +4,14 @@
   become: true
   vars:
     homelab_user: pricekev
+    hlh_offline: false
 
   tasks:
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 3600
+      when: not hlh_offline
 
     - name: Clean up broken Docker apt repository if present
       ansible.builtin.file:

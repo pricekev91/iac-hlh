@@ -9,8 +9,8 @@ terraform {
 
 provider "proxmox" {
   pm_api_url   = var.pm_api_url
-  pm_user      = "root@pam"
-  pm_password  = var.pm_root_password
+  pm_api_token_id     = var.pm_api_token_id
+  pm_api_token_secret = var.pm_api_token_secret
   pm_tls_insecure = true
 }
 
@@ -44,7 +44,7 @@ resource "proxmox_lxc" "hlh_docker" {
     tag    = var.network_tag
   }
 
-  password = var.lxc_root_password
+  password = var.lxc_root_password != "" ? var.lxc_root_password : null
 
   rootfs {
     storage = "RaidZ1-6TB"

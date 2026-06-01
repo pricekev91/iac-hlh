@@ -1,101 +1,95 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy hlh-docker LXC (vmid 102) on prox01
-# See ADR-001.md for architecture decisions
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TF_DIR="${SCRIPT_DIR}/opentofu"
-ANSIBLE_DIR="${SCRIPT_DIR}/ansible"
+TF_SCRIPT="${SCRIPT_DIR}/deploy-hlh-docker.tf.sh"
+CONFIG_SCRIPT="${SCRIPT_DIR}/configure-hlh-docker.sh"
+MODE="apply"
+OFFLINE=0
+RUN_TF=1
+RUN_CONFIG=1
+HOST_OVERRIDE=""
 
-if [[ ! -f "${TF_DIR}/main.tf" ]]; then
-    echo "ERROR: OpenTofu config not found at ${TF_DIR}" >&2
+usage() {
+    cat <<'EOF'
+Usage:
+  ./deploy-hlh-docker.sh [options]
+
+Options:
+  --plan           Run plan-only for OpenTofu; skip Ansible configuration.
+  --apply          Apply OpenTofu and run Ansible configuration (default).
+  --offline        Use offline-friendly behavior (no upgrade/init changes).
+  --tf-only        Run only OpenTofu stage.
+  --config-only    Run only Ansible stage.
+  --host <ip>      Override target host for Ansible stage.
+  -h, --help       Show this help.
+
+Required for OpenTofu stage:
+  TF_VAR_pm_api_url
+  TF_VAR_pm_api_token_id
+  TF_VAR_pm_api_token_secret
+
+Optional:
+  TF_VAR_lxc_root_password (if omitted, LXC root password is not set)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --plan)
+            MODE="plan"
+            RUN_CONFIG=0
+            ;;
+        --apply)
+            MODE="apply"
+            ;;
+        --offline)
+            OFFLINE=1
+            ;;
+        --tf-only)
+            RUN_CONFIG=0
+            ;;
+        --config-only)
+            RUN_TF=0
+            ;;
+        --host)
+            [[ $# -ge 2 ]] || { echo "ERROR: --host requires a value" >&2; exit 1; }
+            HOST_OVERRIDE="$2"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "ERROR: Unknown option: $1" >&2
+            usage
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+if [[ "$MODE" == "plan" && "$RUN_TF" -eq 0 ]]; then
+    echo "ERROR: --plan requires OpenTofu stage to run." >&2
     exit 1
 fi
 
-cd "$TF_DIR"
-
-# Set environment variables (override with .tfvars or env)
-export TF_VAR_pm_api_url="${TF_VAR_pm_api_url:-https://192.168.1.10:8006/api2/json}"
-export TF_VAR_target_node="${TF_VAR_target_node:-prox01}"
-export TF_VAR_ostemplate="${TF_VAR_ostemplate:-local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst}"
-export TF_VAR_cores="${TF_VAR_cores:-4}"
-export TF_VAR_memory="${TF_VAR_memory:-4096}"
-export TF_VAR_network_tag="${TF_VAR_network_tag:-0}"
-export TF_VAR_lxc_root_password="${TF_VAR_lxc_root_password:-}"
-export TF_VAR_pm_root_password="${TF_VAR_pm_root_password:-}"
-
-# Validate required vars
-if [[ -z "${TF_VAR_lxc_root_password:-}" ]]; then
-    echo "ERROR: TF_VAR_lxc_root_password is required (unprivileged LXC needs root password)" >&2
-    exit 1
+if [[ "$RUN_TF" -eq 1 ]]; then
+    TF_ARGS=("--${MODE}")
+    [[ "$OFFLINE" -eq 1 ]] && TF_ARGS+=("--offline")
+    "${TF_SCRIPT}" "${TF_ARGS[@]}"
 fi
 
-if [[ -z "${TF_VAR_pm_root_password:-}" ]]; then
-    echo "ERROR: TF_VAR_pm_root_password is required (Proxmox root@pam password)" >&2
-    exit 1
+if [[ "$RUN_CONFIG" -eq 1 ]]; then
+    CONFIG_ARGS=()
+    [[ "$OFFLINE" -eq 1 ]] && CONFIG_ARGS+=("--offline")
+    [[ -n "$HOST_OVERRIDE" ]] && CONFIG_ARGS+=("--host" "$HOST_OVERRIDE")
+    "${CONFIG_SCRIPT}" "${CONFIG_ARGS[@]}"
 fi
 
-# Run OpenTofu
-echo "=== Initializing OpenTofu ==="
-tofu init
-
-echo ""
-echo "=== Plan ==="
-tofu plan \
-    -var "pm_api_url=${TF_VAR_pm_api_url}" \
-    -var "ostemplate=${TF_VAR_ostemplate}" \
-    -var "network_tag=${TF_VAR_network_tag}" \
-    -var "lxc_root_password=${TF_VAR_lxc_root_password}" \
-    -var "pm_root_password=${TF_VAR_pm_root_password}"
-
-echo ""
-read -rp "Apply hlh-docker LXC (vmid 102)? [y/N] " confirm
-if [[ "$confirm" =~ ^[Yy]$ ]]; then
-    echo "=== Applying ==="
-    tofu apply \
-        -auto-approve \
-        -var "pm_api_url=${TF_VAR_pm_api_url}" \
-        -var "ostemplate=${TF_VAR_ostemplate}" \
-        -var "network_tag=${TF_VAR_network_tag}" \
-        -var "lxc_root_password=${TF_VAR_lxc_root_password}" \
-        -var "pm_root_password=${TF_VAR_pm_root_password}"
-
-    echo ""
-    echo "=== hlh-docker LXC deployed ==="
-    echo "Waiting for container to start..."
-
-    # Wait for LXC to be running
-    for i in $(seq 1 30); do
-        STATUS=$(ssh -o StrictHostKeyChecking=no root@192.168.1.10 "pct status 102" 2>/dev/null | awk '{print $2}')
-        if [[ "$STATUS" == "running" ]]; then
-            echo "Container is running."
-            break
-        fi
-        echo "  Waiting... ($i/30)"
-        sleep 5
-    done
-
-    # Get the container IP
-    CONTAINER_IP=$(ssh -o StrictHostKeyChecking=no root@192.168.1.10 "pct exec 102 -- ip -4 addr show scope global | grep -oP 'inet \K[0-9.]+' | head -1" 2>/dev/null || echo "192.168.1.13")
-    echo "Container IP: ${CONTAINER_IP}"
-
-    # Run Ansible playbook to install Docker, Dockhand, LazyDocker
-    if [[ -d "${ANSIBLE_DIR}" ]]; then
-        echo ""
-        echo "=== Running Ansible playbook ==="
-        cd "$ANSIBLE_DIR"
-        INVENTORY="${ANSIBLE_DIR}/inventories/hlh-docker.yml"
-        ANSIBLE_HOST=${CONTAINER_IP} \
-            "${ANSIBLE_DIR}/playbooks/hlh-docker.yml" \
-            -i "${INVENTORY}" \
-            --private-key ~/.ssh/id_ed25519
-    fi
-
-    echo ""
-    echo "=== Deployment complete ==="
-    echo "  Dockhand GUI: http://${CONTAINER_IP}:3000"
-    echo "  LazyDocker:   lazydocker (SSH into container)"
+if [[ "$MODE" == "plan" ]]; then
+    echo "Plan complete. No infrastructure changes were applied."
 else
-    echo "Aborted."
+    echo "Deployment workflow complete."
 fi

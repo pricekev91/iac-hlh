@@ -9,27 +9,32 @@
   ansible.builtin.file:
     path: /etc/apt/keyrings/docker.gpg
     state: absent
+  when: not hlh_offline
 
 - name: Download and dearmor Docker GPG key
   ansible.builtin.shell: |
     set -euo pipefail
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod 644 /etc/apt/keyrings/docker.gpg
+  when: not hlh_offline
 
 - name: Verify key is binary format
   ansible.builtin.command:
     cmd: file /etc/apt/keyrings/docker.gpg
   register: key_file_type
+  when: not hlh_offline
 
 - name: Add Docker repository
   ansible.builtin.apt_repository:
     repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
     state: present
+  when: not hlh_offline
 
 - name: Update apt cache after adding Docker repo
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: 3600
+  when: not hlh_offline
 
 - name: Install Docker Engine and plugins
   ansible.builtin.apt:

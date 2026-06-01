@@ -45,14 +45,9 @@ variable "network_tag" {
 }
 
 variable "lxc_root_password" {
-  description = "Root password for the unprivileged LXC (required for container login)"
+  description = "Optional root password for the unprivileged LXC (leave empty to use SSH key-only access)"
   type        = string
-  sensitive   = true
-}
-
-variable "pm_root_password" {
-  description = "Proxmox root@pam password for API authentication"
-  type        = string
+  default     = ""
   sensitive   = true
 }
 
