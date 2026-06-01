@@ -1,7 +1,7 @@
 
 #!/usr/bin/env bash
 # configure-ai-engine-inside-lxc.sh
-# Version: 0.7.0
+# Version: 0.8.0
 # Description: Bootstrap llama.cpp AI engine on Ubuntu 24.04 LXC with ROCm passthrough
 # Target GPU: AMD Radeon 890M (gfx1150/Strix Halo) on Proxmox 9.x privileged LXC
 # Requirements: Run as root inside privileged LXC with GPU passthrough and /srv/ai/models bind mount
@@ -16,6 +16,9 @@
 #   0.7.0 - Upgraded to ROCm 7.2.3 for native gfx1150 (Strix Halo) rocBLAS support
 #            Fixed -ngl flag, removed --flash-attn, added render/video group for root
 #            Fixed KFD cgroup device major (511, not 238) documented in create script
+#   0.8.0 - switch-model.sh v1.3.0: full ctx-size + KV cache + MTP auto-detect
+#            MTP models detected by filename (case-insensitive 'MTP' match)
+#            ExecStart rewritten atomically via awk on every switch (no sed fragility)
 
 set -euo pipefail
 
@@ -162,45 +165,226 @@ UNIT
 echo "[5/7] Creating interactive model switcher: $SWITCH_SCRIPT..."
 cat > "$SWITCH_SCRIPT" << 'EOS'
 #!/usr/bin/env bash
-MODEL_DIR="/srv/ai/models"
-SERVICE="ai-engine"
-SYSTEMD_SERVICE="/etc/systemd/system/${SERVICE}.service"
+# switch-model.sh
+# Version: 1.3.0
+# Description: Interactive model switcher for llama.cpp ai-engine service
+# Supports: model selection, ctx-size, KV cache quantization, MTP auto-detect
+# Changelog:
+#   1.0.0 - Initial version (model switch only)
+#   1.1.0 - Added ctx-size selection and KV cache quantization prompt
+#   1.2.0 - Added VRAM budget reference table to banner
+#            ctx-size options expanded: 64K / 32K / 16K / 8K / custom
+#            Shows current model, ctx-size, and KV cache state on launch
+#   1.3.0 - Auto-detect MTP models by filename (case-insensitive 'MTP' match)
+#            Toggle --spec-type draft-mtp / --spec-draft-n-max / --parallel 1
+#            Replaced fragile sed patching with atomic awk ExecStart rewrite
+#            Model list annotates MTP entries with [MTP] tag
+#            Banner shows current MTP mode
 
 set -euo pipefail
 
+MODEL_DIR="/srv/ai/models"
+SERVICE="ai-engine"
+SYSTEMD_SERVICE="/etc/systemd/system/${SERVICE}.service"
+MTP_DRAFT_N_MAX="${MTP_DRAFT_N_MAX:-3}"
+
+# ─── MTP Detection ─────────────────────────────────────────────────────────────
+is_mtp_model() {
+  [[ "$(basename "$1")" =~ [Mm][Tt][Pp] ]]
+}
+
+# ─── Atomic ExecStart rewrite ──────────────────────────────────────────────────
+# Rewrites the full ExecStart block in the systemd unit with all chosen params.
+# Using awk avoids fragile multi-sed chaining and handles add/remove of MTP flags.
+rewrite_execstart() {
+  local model="$1" ctx="$2" kv="$3" mtp="$4"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -v model="$model" -v ctx="$ctx" -v kv="$kv" -v mtp="$mtp" -v mtpn="$MTP_DRAFT_N_MAX" '
+    BEGIN { in_block=0; done=0 }
+    /^ExecStart=.*llama-server/ {
+      done=1
+      print "ExecStart=/opt/llama.cpp/build/bin/llama-server \\"
+      print "  --model " model " \\"
+      print "  --host 0.0.0.0 --port 8080 \\"
+      print "  --ctx-size " ctx " \\"
+      print "  -ngl 99 \\"
+      print "  --batch-size 512 \\"
+      print "  --cache-type-k " kv " \\"
+      if (mtp == "1") {
+        print "  --cache-type-v " kv " \\"
+        print "  --spec-type draft-mtp \\"
+        print "  --spec-draft-n-max " mtpn " \\"
+        print "  --parallel 1"
+      } else {
+        print "  --cache-type-v " kv
+      }
+      in_block=1
+      next
+    }
+    in_block {
+      if (/^Restart=/) { in_block=0; print }
+      next
+    }
+    { print }
+    END { if (!done) exit 42 }
+  ' "$SYSTEMD_SERVICE" > "$tmp_file" || {
+    rm -f "$tmp_file"
+    echo "ERROR: ExecStart block not found in $SYSTEMD_SERVICE"
+    return 1
+  }
+  mv "$tmp_file" "$SYSTEMD_SERVICE"
+}
+
+# ─── Banner ────────────────────────────────────────────────────────────────────
 echo ""
-echo "Available GGUF models in $MODEL_DIR:"
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║                      switch-model.sh                             ║"
+echo "╠══════════════════════════════════════════════════════════════════╣"
+echo "║  VRAM BUDGET REFERENCE  (model weights + KV cache = total need)  ║"
+echo "║                                                                  ║"
+echo "║  Model Weights (fixed, loaded once):                             ║"
+echo "║    70B Q2_K      ~17 GB   70B Q3_K_M   ~26 GB                    ║"
+echo "║    70B Q4_K_M    ~38 GB   70B Q6_K     ~54 GB                    ║"
+echo "║    35B Q4_K_M    ~21 GB   35B Q5_K_M   ~25 GB                    ║"
+echo "║                                                                  ║"
+echo "║  KV Cache (added on top — scales with ctx size):                 ║"
+echo "║                  KV q4_0    KV q6_0    KV q8_0                   ║"
+echo "║    64K context   ~8 GB      ~12 GB     ~18 GB                    ║"
+echo "║    32K context   ~4 GB      ~ 6 GB     ~ 9 GB                    ║"
+echo "║    16K context   ~2 GB      ~ 3 GB     ~ 5 GB                    ║"
+echo "║     8K context   ~1 GB      ~ 2 GB     ~ 3 GB                    ║"
+echo "║                                                                  ║"
+echo "║  Example: 70B Q4_K_M (~38 GB) + 64K q8_0 (~18 GB) = ~56 GB       ║"
+echo "║           70B Q4_K_M (~38 GB) + 64K q4_0 (~ 8 GB) = ~46 GB       ║"
+echo "║           70B Q3_K_M (~26 GB) + 64K q4_0 (~ 8 GB) = ~34 GB       ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
+echo ""
+
+# ─── Current state ─────────────────────────────────────────────────────────────
+CUR_MODEL=$(grep -- '--model '        "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--model")        print $(i+1)}')
+CUR_CTX=$(  grep -- '--ctx-size '     "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--ctx-size")     print $(i+1)}') || CUR_CTX="(not set)"
+CUR_KV_K=$( grep -- '--cache-type-k ' "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--cache-type-k") print $(i+1)}') || CUR_KV_K="(not set)"
+CUR_KV_V=$( grep -- '--cache-type-v ' "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--cache-type-v") print $(i+1)}') || CUR_KV_V="(not set)"
+if is_mtp_model "${CUR_MODEL:-}"; then CUR_MTP="yes"; else CUR_MTP="no"; fi
+
+echo "  Model directory : $MODEL_DIR"
+echo "  Currently active: $CUR_MODEL"
+echo "  ctx-size        : ${CUR_CTX:-(not set)}"
+echo "  KV cache (K/V)  : ${CUR_KV_K} / ${CUR_KV_V}"
+echo "  MTP mode        : $CUR_MTP"
+echo ""
+
+# ─── Model selection ───────────────────────────────────────────────────────────
 mapfile -t MODELS < <(find "$MODEL_DIR" -maxdepth 1 -type f -name '*.gguf' | sort)
 if [ "${#MODELS[@]}" -eq 0 ]; then
   echo "No .gguf models found in $MODEL_DIR."
   exit 1
 fi
 
-CUR_MODEL=$(grep -- '--model ' "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--model") print $(i+1)}')
-echo "Current model: $CUR_MODEL"
-
+echo "Available models:"
 for i in "${!MODELS[@]}"; do
-  printf "%2d) %s\n" $((i+1)) "${MODELS[$i]}"
+  if is_mtp_model "${MODELS[$i]}"; then
+    printf "  %2d) %s  [MTP]\n" $((i+1)) "${MODELS[$i]}"
+  else
+    printf "  %2d) %s\n" $((i+1)) "${MODELS[$i]}"
+  fi
 done
+
 read -rp "Select model number to activate: " CHOICE
 if ! [[ "$CHOICE" =~ ^[0-9]+$ ]] || (( CHOICE < 1 || CHOICE > ${#MODELS[@]} )); then
   echo "Invalid selection."
   exit 1
 fi
 NEW_MODEL="${MODELS[$((CHOICE-1))]}"
-if [ "$NEW_MODEL" = "$CUR_MODEL" ]; then
-  echo "Model already active."
-  exit 0
+
+# ─── Context size selection ────────────────────────────────────────────────────
+echo ""
+echo "Context size options:"
+echo "   1) 65536  (64K) — full long-context"
+echo "   2) 32768  (32K) — half, saves ~50% KV VRAM"
+echo "   3) 16384  (16K) — quarter, minimal KV usage"
+echo "   4)  8192   (8K) — minimal, maximum VRAM headroom"
+echo "   5) Custom       — enter manually"
+
+read -rp "Select context size [default: 65536]: " CTX_CHOICE
+case "${CTX_CHOICE:-1}" in
+  1) NEW_CTX=65536 ;;
+  2) NEW_CTX=32768 ;;
+  3) NEW_CTX=16384 ;;
+  4) NEW_CTX=8192  ;;
+  5)
+    read -rp "Enter custom ctx-size: " NEW_CTX
+    if ! [[ "$NEW_CTX" =~ ^[0-9]+$ ]]; then
+      echo "Invalid ctx-size."
+      exit 1
+    fi
+    ;;
+  *) NEW_CTX=65536 ;;
+esac
+
+# ─── KV cache quantization selection ──────────────────────────────────────────
+echo ""
+echo "KV cache quantization (applies to both K and V cache):"
+echo "   1) q8_0  — highest quality,  ~2x VRAM vs q4  (safe floor for quality)"
+echo "   2) q6_0  — very good quality, ~1.5x VRAM vs q4"
+echo "   3) q4_0  — recommended,       lowest VRAM,    minimal quality loss"
+echo ""
+echo "   Recommendation for 64K context: q4_0 (saves 8-10 GB vs q8_0)"
+echo "   Minimum recommended: q4_0 — going lower risks attention degradation"
+
+read -rp "Select KV cache quant [default: q4_0]: " KV_CHOICE
+case "${KV_CHOICE:-3}" in
+  1) NEW_KV="q8_0" ;;
+  2) NEW_KV="q6_0" ;;
+  3) NEW_KV="q4_0" ;;
+  *) NEW_KV="q4_0" ;;
+esac
+
+# ─── MTP detection ─────────────────────────────────────────────────────────────
+if is_mtp_model "$NEW_MODEL"; then
+  NEW_MTP="yes"
+  MTP_INFO="--spec-type draft-mtp --spec-draft-n-max $MTP_DRAFT_N_MAX --parallel 1"
+else
+  NEW_MTP="no"
+  MTP_INFO="(none)"
 fi
-read -rp "Switch to $NEW_MODEL and restart $SERVICE? [y/N]: " CONFIRM
+
+# ─── Summary & confirm ─────────────────────────────────────────────────────────
+echo ""
+echo "  New model   : $NEW_MODEL"
+echo "  ctx-size    : $NEW_CTX"
+echo "  KV cache    : $NEW_KV (K and V)"
+echo "  MTP mode    : $NEW_MTP  $MTP_INFO"
+echo ""
+read -rp "Apply and restart $SERVICE? [y/N]: " CONFIRM
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
   echo "Aborted."
   exit 0
 fi
-sed -i "s|--model [^ ]*|--model $NEW_MODEL|" "$SYSTEMD_SERVICE"
+
+# ─── Rewrite ExecStart block ───────────────────────────────────────────────────
+if is_mtp_model "$NEW_MODEL"; then
+  rewrite_execstart "$NEW_MODEL" "$NEW_CTX" "$NEW_KV" "1"
+else
+  rewrite_execstart "$NEW_MODEL" "$NEW_CTX" "$NEW_KV" "0"
+fi
+
+# ─── Reload & restart ──────────────────────────────────────────────────────────
 systemctl daemon-reload
 systemctl restart "$SERVICE"
-echo "Switched to $NEW_MODEL and restarted $SERVICE."
+
+# ─── Confirm active settings ───────────────────────────────────────────────────
+echo ""
+echo "  [✓] Switched to : $NEW_MODEL"
+echo "  [✓] ctx-size    : $NEW_CTX"
+echo "  [✓] KV cache    : $NEW_KV (K and V)"
+echo "  [✓] MTP mode    : $NEW_MTP"
+echo "  [✓] Service     : $SERVICE restarted"
+echo ""
+echo "  Verify VRAM usage with: rocm-smi"
+echo "  Watch logs with       : journalctl -u $SERVICE -f"
 EOS
 chmod +x "$SWITCH_SCRIPT"
 
@@ -221,7 +405,7 @@ echo ""
 echo "[Service status]"
 systemctl status "$SERVICE_NAME" --no-pager
 echo ""
-echo "[Bootstrap complete - v0.7.0]"
+echo "[Bootstrap complete - v0.7.1]"
 echo "  Native llama.cpp web UI : http://<container-ip>:8080"
 echo "  Switch models with      : switch-model.sh"
 echo "  GPU device              : gfx1150 (AMD Radeon 890M)"
