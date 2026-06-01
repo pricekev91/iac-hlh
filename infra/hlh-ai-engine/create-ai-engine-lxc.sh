@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # create-ai-engine-lxc.sh
-# Version: 0.3.2
+# Version: 0.3.3
 # Description: Creates privileged Ubuntu 24.04 LXC on Proxmox with GPU passthrough for llama.cpp
 # Changelog:
 #   0.1.0 - Initial version
@@ -8,6 +8,7 @@
 #   0.3.0 - Fixed KFD cgroup device major 511 (not 238), updated ROCm host to 7.2.3
 #   0.3.1 - Fixed unbound ROCM_VERSION variable
 #   0.3.2 - Mount host /srv/ai/models to same /srv/ai/models path inside LXC
+#   0.3.3 - Pin hlh-ai-engine to static 192.168.1.12/24 with gateway 192.168.1.1
 
 set -euo pipefail
 
@@ -25,6 +26,8 @@ LXC_ROOTFS_SIZE="64"
 LXC_MEMORY="49152"
 LXC_CORES="12"
 ROCM_VERSION="7.2.3"
+LXC_IP_CONFIG="192.168.1.12/24"
+LXC_GATEWAY="192.168.1.1"
 
 # -----------------------------
 # STEP 1 — Model storage directory
@@ -45,7 +48,7 @@ pct create "${LXC_ID}" "${LXC_IMAGE}" \
     --memory "${LXC_MEMORY}" \
     --cores "${LXC_CORES}" \
     --features nesting=1,keyctl=1 \
-    --net0 name=eth0,bridge=vmbr0,ip=dhcp \
+    --net0 name=eth0,bridge=vmbr0,ip=${LXC_IP_CONFIG},gw=${LXC_GATEWAY} \
     --unprivileged 0 \
     --onboot 1 \
     --mp0 "${MODEL_HOST_DIR},mp=${MODEL_LXC_DIR}" \
