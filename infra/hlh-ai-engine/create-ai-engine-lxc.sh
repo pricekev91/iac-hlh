@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # create-ai-engine-lxc.sh
-# Version: 0.3.1
+# Version: 0.3.2
 # Description: Creates privileged Ubuntu 24.04 LXC on Proxmox with GPU passthrough for llama.cpp
 # Changelog:
 #   0.1.0 - Initial version
 #   0.2.0 - Fixed storage syntax, double-dash flags, GPU passthrough via lxc.cgroup2
 #   0.3.0 - Fixed KFD cgroup device major 511 (not 238), updated ROCm host to 7.2.3
 #   0.3.1 - Fixed unbound ROCM_VERSION variable
+#   0.3.2 - Mount host /srv/ai/models to same /srv/ai/models path inside LXC
 
 set -euo pipefail
 
@@ -18,7 +19,7 @@ LXC_NAME="ai-engine"
 LXC_HOSTNAME="ai-engine"
 LXC_IMAGE="local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 POOL="RaidZ1-6TB"
-MODEL_HOST_DIR="/mnt/ai/models"
+MODEL_HOST_DIR="/srv/ai/models"
 MODEL_LXC_DIR="/srv/ai/models"
 LXC_ROOTFS_SIZE="64"
 LXC_MEMORY="49152"
