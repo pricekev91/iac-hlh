@@ -1,7 +1,7 @@
 
 #!/usr/bin/env bash
 # configure-ai-engine-inside-lxc.sh
-# Version: 0.8.0
+# Version: 0.8.1
 # Description: Bootstrap llama.cpp AI engine on Ubuntu 24.04 LXC with ROCm passthrough
 # Target GPU: AMD Radeon 890M (gfx1150/Strix Halo) on Proxmox 9.x privileged LXC
 # Requirements: Run as root inside privileged LXC with GPU passthrough and /srv/ai/models bind mount
@@ -19,6 +19,8 @@
 #   0.8.0 - switch-model.sh v1.3.0: full ctx-size + KV cache + MTP auto-detect
 #            MTP models detected by filename (case-insensitive 'MTP' match)
 #            ExecStart rewritten atomically via awk on every switch (no sed fragility)
+#   0.8.1 - Reuse existing .gguf on mounted /srv/ai/models during bootstrap
+#            Download default model only when model directory is empty
 
 set -euo pipefail
 
@@ -125,11 +127,20 @@ cmake --build build --config Release -j$(nproc)
 echo "[3/7] Setting up model directory..."
 mkdir -p "$MODEL_DIR"
 cd "$MODEL_DIR"
-if [ ! -f "$DEFAULT_MODEL_FILE" ]; then
-  echo "Downloading default model: $DEFAULT_MODEL_FILE"
-  wget -O "$DEFAULT_MODEL_FILE" "$DEFAULT_MODEL_URL"
+
+if [ -f "$DEFAULT_MODEL_FILE" ]; then
+  ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
+  echo "Default model already present: $ACTIVE_MODEL_FILE"
 else
-  echo "Default model already present: $DEFAULT_MODEL_FILE"
+  mapfile -t EXISTING_MODELS < <(find "$MODEL_DIR" -maxdepth 1 -type f -name '*.gguf' -printf '%f\n' | sort)
+  if [ "${#EXISTING_MODELS[@]}" -gt 0 ]; then
+    ACTIVE_MODEL_FILE="${EXISTING_MODELS[0]}"
+    echo "Using existing model from mounted storage: $ACTIVE_MODEL_FILE"
+  else
+    ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
+    echo "No existing models found; downloading default model: $ACTIVE_MODEL_FILE"
+    wget -O "$ACTIVE_MODEL_FILE" "$DEFAULT_MODEL_URL"
+  fi
 fi
 
 # --- 4. SYSTEMD SERVICE ---
@@ -148,7 +159,7 @@ Environment=LD_LIBRARY_PATH=${ROCM_PATH}/lib
 Environment=ROCM_PATH=${ROCM_PATH}
 Environment=HIP_PATH=${ROCM_PATH}
 ExecStart=${LLAMA_CPP_DIR}/build/bin/llama-server \
-  --model ${MODEL_DIR}/${DEFAULT_MODEL_FILE} \
+  --model ${MODEL_DIR}/${ACTIVE_MODEL_FILE} \
   --host 0.0.0.0 --port 8080 \
   --ctx-size 8192 \
   -ngl 99 \
