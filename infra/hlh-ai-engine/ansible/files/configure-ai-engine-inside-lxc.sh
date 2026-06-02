@@ -191,7 +191,7 @@ cat > "$SWITCH_SCRIPT" << 'EOS'
 #            Replaced fragile sed patching with atomic awk ExecStart rewrite
 #            Model list annotates MTP entries with [MTP] tag
 #            Banner shows current MTP mode
-#   1.4.0 - Added turboquant q3 option for KV cache quantization
+#   1.4.1 - Remap turboquant q3 menu choice to the lowest supported llama.cpp KV cache type
 
 set -euo pipefail
 
@@ -342,7 +342,7 @@ echo "KV cache quantization (applies to both K and V cache):"
 echo "   1) q8_0  — highest quality,  ~2x VRAM vs q4  (safe floor for quality)"
 echo "   2) q6_0  — very good quality, ~1.5x VRAM vs q4"
 echo "   3) q4_0  — recommended,       lowest VRAM,    minimal quality loss"
-echo "   4) q3_k  — turboquant q3,     experimental,   lowest VRAM"
+echo "   4) q4_0  — turboquant q3 menu, lowest supported KV cache"
 echo ""
 echo "   Recommendation for 64K context: q4_0 (saves 8-10 GB vs q8_0)"
 echo "   Minimum recommended: q4_0 — going lower risks attention degradation"
@@ -352,7 +352,7 @@ case "${KV_CHOICE:-3}" in
   1) NEW_KV="q8_0" ;;
   2) NEW_KV="q6_0" ;;
   3) NEW_KV="q4_0" ;;
-  4) NEW_KV="q3_k" ;;
+  4) NEW_KV="q4_0" ;;
   *) NEW_KV="q4_0" ;;
 esac
 
