@@ -9,8 +9,9 @@ terraform {
 
 provider "proxmox" {
   endpoint  = var.pm_endpoint
-  username  = "root@pam"
-  password  = var.pm_password
+  api_token = var.pm_api_token != "" ? var.pm_api_token : null
+  username  = var.pm_api_token == "" ? var.pm_username : null
+  password  = var.pm_api_token == "" ? var.pm_password : null
   insecure  = true
 }
 

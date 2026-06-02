@@ -4,9 +4,23 @@ variable "pm_endpoint" {
   default     = "https://192.168.1.10:8006/"
 }
 
+variable "pm_username" {
+  description = "Proxmox username for password auth"
+  type        = string
+  default     = "root@pam"
+}
+
+variable "pm_api_token" {
+  description = "Optional Proxmox API token in format user@realm!tokenid=secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "pm_password" {
   description = "Proxmox root@pam password"
   type        = string
+  default     = ""
   sensitive   = true
 }
 

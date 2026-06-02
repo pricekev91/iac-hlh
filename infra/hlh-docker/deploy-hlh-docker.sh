@@ -26,7 +26,10 @@ Options:
 
 Required for OpenTofu stage:
   TF_VAR_pm_endpoint (default: https://192.168.1.10:8006/)
-  TF_VAR_pm_password (or enter interactively when prompted)
+    Either:
+        TF_VAR_pm_api_token (recommended)
+    Or:
+        TF_VAR_pm_username + TF_VAR_pm_password (prompted if unset)
 
 Optional:
     TF_VAR_lxc_root_password (if omitted, deploy will prompt in apply mode)
@@ -37,11 +40,29 @@ run_opentofu_stage() {
     [[ -f "${TF_DIR}/main.tf" ]] || { echo "ERROR: OpenTofu config not found at ${TF_DIR}" >&2; exit 1; }
 
     export TF_VAR_pm_endpoint="${TF_VAR_pm_endpoint:-https://192.168.1.10:8006/}"
-    if [[ -z "${TF_VAR_pm_password:-}" ]]; then
-        read -rsp "Proxmox root@pam password: " TF_VAR_pm_password
-        echo
+    export TF_VAR_pm_username="${TF_VAR_pm_username:-root@pam}"
+    export TF_VAR_pm_api_token="${TF_VAR_pm_api_token:-}"
+
+    if [[ -z "${TF_VAR_pm_api_token}" ]]; then
+        if [[ -z "${TF_VAR_pm_password:-}" ]]; then
+            read -rsp "Proxmox ${TF_VAR_pm_username} password: " TF_VAR_pm_password
+            echo
+        fi
+
+        # Fail fast on bad API credentials before running tofu plan/apply.
+        AUTH_CHECK_ENDPOINT="${TF_VAR_pm_endpoint%/}/api2/json/access/ticket"
+        AUTH_RESPONSE="$(curl -sk -X POST "$AUTH_CHECK_ENDPOINT" \
+            --data-urlencode "username=${TF_VAR_pm_username}" \
+            --data-urlencode "password=${TF_VAR_pm_password}")"
+
+        if ! printf '%s' "$AUTH_RESPONSE" | grep -q '"ticket"'; then
+            echo "ERROR: Proxmox API authentication failed for ${TF_VAR_pm_username}." >&2
+            echo "Hint: set TF_VAR_pm_api_token to bypass password auth issues." >&2
+            exit 1
+        fi
     fi
-    export TF_VAR_pm_password
+
+    export TF_VAR_pm_password="${TF_VAR_pm_password:-}"
     export TF_VAR_target_node="${TF_VAR_target_node:-prox01}"
     export TF_VAR_ostemplate="${TF_VAR_ostemplate:-local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst}"
     export TF_VAR_cores="${TF_VAR_cores:-4}"
@@ -71,6 +92,8 @@ run_opentofu_stage() {
 
     TOFU_ARGS=(
         -var "pm_endpoint=${TF_VAR_pm_endpoint}"
+        -var "pm_username=${TF_VAR_pm_username}"
+        -var "pm_api_token=${TF_VAR_pm_api_token}"
         -var "pm_password=${TF_VAR_pm_password}"
         -var "target_node=${TF_VAR_target_node}"
         -var "ostemplate=${TF_VAR_ostemplate}"
