@@ -10,7 +10,7 @@ Usage:
 	./deploy-hlh-ai-engine.sh
 
 This is the direct Proxmox bootstrap path (no OpenTofu):
-  1) Create privileged LXC 101 (ai-engine)
+	1) Create privileged LXC 101 (hlh-ai-engine)
   2) Configure GPU passthrough
   3) Start container
   4) Push/run in-container bootstrap script
@@ -18,8 +18,8 @@ EOF
 }
 
 LXC_ID=101
-LXC_NAME="ai-engine"
-LXC_HOSTNAME="ai-engine"
+LXC_NAME="hlh-ai-engine"
+LXC_HOSTNAME="hlh-ai-engine"
 LXC_IMAGE="local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 POOL="RaidZ1-6TB"
 MODEL_HOST_DIR="/srv/ai/models"
