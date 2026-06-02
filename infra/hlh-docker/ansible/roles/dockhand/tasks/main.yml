@@ -31,7 +31,7 @@
       -v /srv/dockhand/data:/data
       -v /var/run/docker.sock:/var/run/docker.sock
       -v /srv/dockhand/run:/run
-      -p 8080:8080
+      -p 80:8080
       fnsys/dockhand:latest
   register: dockhand_run
   changed_when: dockhand_run.rc == 0
@@ -47,4 +47,4 @@
     that:
       - dockhand_status.stdout == "true"
     fail_msg: "Dockhand container is not running!"
-    success_msg: "Dockhand is running on port 8080"
+    success_msg: "Dockhand is running on port 80"

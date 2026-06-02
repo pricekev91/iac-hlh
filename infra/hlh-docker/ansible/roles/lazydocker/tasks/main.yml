@@ -4,7 +4,6 @@
     url: https://github.com/jesseduffield/lazydocker/releases/latest/download/lazydocker_Linux_x86_64.tar.gz
     dest: /tmp/lazydocker.tar.gz
     mode: "0644"
-    checksum: "{{ lazydocker_checksum | default('skip') }}"
   when: not (hlh_offline | bool)
 
 - name: Extract LazyDocker binary
