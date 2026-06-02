@@ -177,7 +177,7 @@ echo "[5/7] Creating interactive model switcher: $SWITCH_SCRIPT..."
 cat > "$SWITCH_SCRIPT" << 'EOS'
 #!/usr/bin/env bash
 # switch-model.sh
-# Version: 1.3.0
+# Version: 1.4.0
 # Description: Interactive model switcher for llama.cpp ai-engine service
 # Supports: model selection, ctx-size, KV cache quantization, MTP auto-detect
 # Changelog:
@@ -191,6 +191,7 @@ cat > "$SWITCH_SCRIPT" << 'EOS'
 #            Replaced fragile sed patching with atomic awk ExecStart rewrite
 #            Model list annotates MTP entries with [MTP] tag
 #            Banner shows current MTP mode
+#   1.4.0 - Added turboquant q3 option for KV cache quantization
 
 set -euo pipefail
 
@@ -341,6 +342,7 @@ echo "KV cache quantization (applies to both K and V cache):"
 echo "   1) q8_0  — highest quality,  ~2x VRAM vs q4  (safe floor for quality)"
 echo "   2) q6_0  — very good quality, ~1.5x VRAM vs q4"
 echo "   3) q4_0  — recommended,       lowest VRAM,    minimal quality loss"
+echo "   4) q3_k  — turboquant q3,     experimental,   lowest VRAM"
 echo ""
 echo "   Recommendation for 64K context: q4_0 (saves 8-10 GB vs q8_0)"
 echo "   Minimum recommended: q4_0 — going lower risks attention degradation"
@@ -350,6 +352,7 @@ case "${KV_CHOICE:-3}" in
   1) NEW_KV="q8_0" ;;
   2) NEW_KV="q6_0" ;;
   3) NEW_KV="q4_0" ;;
+  4) NEW_KV="q3_k" ;;
   *) NEW_KV="q4_0" ;;
 esac
 

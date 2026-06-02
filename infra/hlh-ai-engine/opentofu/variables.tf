@@ -23,7 +23,7 @@ variable "target_node" {
 variable "hostname" {
   description = "LXC hostname"
   type        = string
-  default     = "ai-engine"
+  default     = "hlh-ai-engine"
 }
 
 variable "vmid" {
