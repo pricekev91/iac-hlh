@@ -1,7 +1,7 @@
 ---
 - name: Download and install LazyDocker binary
   ansible.builtin.get_url:
-    url: https://github.com/jesseduffield/lazydocker/releases/latest/download/lazydocker_Linux_x86_64.tar.gz
+    url: "https://github.com/jesseduffield/lazydocker/releases/download/v0.25.2/lazydocker_0.25.2_Linux_x86_64.tar.gz"
     dest: /tmp/lazydocker.tar.gz
     mode: "0644"
   when: not (hlh_offline | bool)
@@ -50,7 +50,6 @@
     cmd: lazydocker --version
   register: lazydocker_version
   changed_when: false
-  check_mode: false
 
 - name: Show LazyDocker version
   ansible.builtin.debug:
