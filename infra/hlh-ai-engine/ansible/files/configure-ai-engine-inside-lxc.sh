@@ -164,9 +164,8 @@ ExecStart=${LLAMA_CPP_DIR}/build/bin/llama-server \
   --model ${MODEL_DIR}/${ACTIVE_MODEL_FILE} \
   --host 0.0.0.0 --port 80 \
   --ctx-size 8192 \
-  -ngl 48 \
-  --batch-size 512 \
-  --parallel 1
+  -ngl 99 \
+  --batch-size 512
 Restart=on-failure
 RestartSec=10
 User=root
@@ -180,9 +179,9 @@ echo "[5/7] Creating interactive model switcher: $SWITCH_SCRIPT..."
 cat > "$SWITCH_SCRIPT" << 'EOS'
 #!/usr/bin/env bash
 # switch-model.sh
-# Version: 1.5.0
+# Version: 1.4.0
 # Description: Interactive model switcher for llama.cpp ai-engine service
-# Supports: model selection, ctx-size, GPU layers, KV cache quantization, MTP auto-detect
+# Supports: model selection, ctx-size, KV cache quantization, MTP auto-detect
 # Changelog:
 #   1.0.0 - Initial version (model switch only)
 #   1.1.0 - Added ctx-size selection and KV cache quantization prompt
@@ -195,7 +194,6 @@ cat > "$SWITCH_SCRIPT" << 'EOS'
 #            Model list annotates MTP entries with [MTP] tag
 #            Banner shows current MTP mode
 #   1.4.2 - Remove turboquant menu option until llama.cpp supports it in main
-#   1.5.0 - Add GPU layer selection for partial offload on large models
 
 set -euo pipefail
 
@@ -213,11 +211,11 @@ is_mtp_model() {
 # Rewrites the full ExecStart block in the systemd unit with all chosen params.
 # Using awk avoids fragile multi-sed chaining and handles add/remove of MTP flags.
 rewrite_execstart() {
-  local model="$1" ctx="$2" ngl="$3" kv="$4" mtp="$5"
+  local model="$1" ctx="$2" kv="$3" mtp="$4"
   local tmp_file
   tmp_file="$(mktemp)"
 
-  awk -v model="$model" -v ctx="$ctx" -v ngl="$ngl" -v kv="$kv" -v mtp="$mtp" -v mtpn="$MTP_DRAFT_N_MAX" '
+  awk -v model="$model" -v ctx="$ctx" -v kv="$kv" -v mtp="$mtp" -v mtpn="$MTP_DRAFT_N_MAX" '
     BEGIN { in_block=0; done=0 }
     /^ExecStart=.*llama-server/ {
       done=1
@@ -225,9 +223,8 @@ rewrite_execstart() {
       print "  --model " model " \\"
       print "  --host 0.0.0.0 --port 80 \\"
       print "  --ctx-size " ctx " \\"
-      print "  -ngl " ngl " \\"
+      print "  -ngl 99 \\"
       print "  --batch-size 512 \\"
-      print "  --parallel 1 \\"
       print "  --cache-type-k " kv " \\"
       if (mtp == "1") {
         print "  --cache-type-v " kv " \\"
@@ -281,7 +278,6 @@ echo ""
 # ─── Current state ─────────────────────────────────────────────────────────────
 CUR_MODEL=$(grep -- '--model '        "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--model")        print $(i+1)}')
 CUR_CTX=$(  grep -- '--ctx-size '     "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--ctx-size")     print $(i+1)}') || CUR_CTX="(not set)"
-CUR_NGL=$(  grep -- ' -ngl '          "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="-ngl")           print $(i+1)}') || CUR_NGL="(not set)"
 CUR_KV_K=$( grep -- '--cache-type-k ' "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--cache-type-k") print $(i+1)}') || CUR_KV_K="(not set)"
 CUR_KV_V=$( grep -- '--cache-type-v ' "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--cache-type-v") print $(i+1)}') || CUR_KV_V="(not set)"
 if is_mtp_model "${CUR_MODEL:-}"; then CUR_MTP="yes"; else CUR_MTP="no"; fi
@@ -289,7 +285,6 @@ if is_mtp_model "${CUR_MODEL:-}"; then CUR_MTP="yes"; else CUR_MTP="no"; fi
 echo "  Model directory : $MODEL_DIR"
 echo "  Currently active: $CUR_MODEL"
 echo "  ctx-size        : ${CUR_CTX:-(not set)}"
-echo "  GPU layers      : ${CUR_NGL:-(not set)}"
 echo "  KV cache (K/V)  : ${CUR_KV_K} / ${CUR_KV_V}"
 echo "  MTP mode        : $CUR_MTP"
 echo ""
@@ -342,31 +337,6 @@ case "${CTX_CHOICE:-1}" in
   *) NEW_CTX=65536 ;;
 esac
 
-# ─── GPU layer offload selection ─────────────────────────────────────────────
-echo ""
-echo "GPU layer offload (-ngl):"
-echo "   1) 48     — recommended for 70B-class models on 890M"
-echo "   2) 40     — safer if 48 still OOMs"
-echo "   3) 32     — conservative partial offload"
-echo "   4) 99     — full offload (smaller models only)"
-echo "   5) Custom — enter manually"
-
-read -rp "Select GPU layers [default: 48]: " NGL_CHOICE
-case "${NGL_CHOICE:-1}" in
-  1) NEW_NGL=48 ;;
-  2) NEW_NGL=40 ;;
-  3) NEW_NGL=32 ;;
-  4) NEW_NGL=99 ;;
-  5)
-    read -rp "Enter custom -ngl value: " NEW_NGL
-    if ! [[ "$NEW_NGL" =~ ^[0-9]+$ ]]; then
-      echo "Invalid GPU layer count."
-      exit 1
-    fi
-    ;;
-  *) NEW_NGL=48 ;;
-esac
-
 # ─── KV cache quantization selection ──────────────────────────────────────────
 echo ""
 echo "KV cache quantization (applies to both K and V cache):"
@@ -398,7 +368,6 @@ fi
 echo ""
 echo "  New model   : $NEW_MODEL"
 echo "  ctx-size    : $NEW_CTX"
-echo "  GPU layers  : $NEW_NGL"
 echo "  KV cache    : $NEW_KV (K and V)"
 echo "  MTP mode    : $NEW_MTP  $MTP_INFO"
 echo ""
@@ -410,9 +379,9 @@ fi
 
 # ─── Rewrite ExecStart block ───────────────────────────────────────────────────
 if is_mtp_model "$NEW_MODEL"; then
-  rewrite_execstart "$NEW_MODEL" "$NEW_CTX" "$NEW_NGL" "$NEW_KV" "1"
+  rewrite_execstart "$NEW_MODEL" "$NEW_CTX" "$NEW_KV" "1"
 else
-  rewrite_execstart "$NEW_MODEL" "$NEW_CTX" "$NEW_NGL" "$NEW_KV" "0"
+  rewrite_execstart "$NEW_MODEL" "$NEW_CTX" "$NEW_KV" "0"
 fi
 
 # ─── Reload & restart ──────────────────────────────────────────────────────────
@@ -423,7 +392,6 @@ systemctl restart "$SERVICE"
 echo ""
 echo "  [✓] Switched to : $NEW_MODEL"
 echo "  [✓] ctx-size    : $NEW_CTX"
-echo "  [✓] GPU layers  : $NEW_NGL"
 echo "  [✓] KV cache    : $NEW_KV (K and V)"
 echo "  [✓] MTP mode    : $NEW_MTP"
 echo "  [✓] Service     : $SERVICE restarted"
