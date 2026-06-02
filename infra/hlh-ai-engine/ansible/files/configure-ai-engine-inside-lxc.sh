@@ -1,3 +1,5 @@
+echo "  Native llama.cpp web UI : http://<container-ip>:80"
+  print "  --host 0.0.0.0 --port 80 \\"
 
 #!/usr/bin/env bash
 # configure-ai-engine-inside-lxc.sh
@@ -147,7 +149,7 @@ fi
 echo "[4/7] Creating systemd service for llama-server..."
 cat > "$SYSTEMD_SERVICE" << UNIT
 [Unit]
-Description=llama.cpp AI Engine (llama-server) - native web UI on port 8080
+Description=llama.cpp AI Engine (llama-server) - native web UI on port 80
 After=network.target
 
 [Service]
@@ -160,7 +162,7 @@ Environment=ROCM_PATH=${ROCM_PATH}
 Environment=HIP_PATH=${ROCM_PATH}
 ExecStart=${LLAMA_CPP_DIR}/build/bin/llama-server \
   --model ${MODEL_DIR}/${ACTIVE_MODEL_FILE} \
-  --host 0.0.0.0 --port 8080 \
+  --host 0.0.0.0 --port 80 \
   --ctx-size 8192 \
   -ngl 99 \
   --batch-size 512
@@ -191,7 +193,7 @@ cat > "$SWITCH_SCRIPT" << 'EOS'
 #            Replaced fragile sed patching with atomic awk ExecStart rewrite
 #            Model list annotates MTP entries with [MTP] tag
 #            Banner shows current MTP mode
-#   1.4.1 - Remap turboquant q3 menu choice to the lowest supported llama.cpp KV cache type
+#   1.4.2 - Remove turboquant menu option until llama.cpp supports it in main
 
 set -euo pipefail
 
@@ -219,7 +221,7 @@ rewrite_execstart() {
       done=1
       print "ExecStart=/opt/llama.cpp/build/bin/llama-server \\"
       print "  --model " model " \\"
-      print "  --host 0.0.0.0 --port 8080 \\"
+      print "  --host 0.0.0.0 --port 80 \\\" 
       print "  --ctx-size " ctx " \\"
       print "  -ngl 99 \\"
       print "  --batch-size 512 \\"
@@ -270,7 +272,6 @@ echo "║     8K context   ~1 GB      ~ 2 GB     ~ 3 GB                    ║"
 echo "║                                                                  ║"
 echo "║  Example: 70B Q4_K_M (~38 GB) + 64K q8_0 (~18 GB) = ~56 GB       ║"
 echo "║           70B Q4_K_M (~38 GB) + 64K q4_0 (~ 8 GB) = ~46 GB       ║"
-echo "║           70B Q3_K_M (~26 GB) + 64K q4_0 (~ 8 GB) = ~34 GB       ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -342,7 +343,6 @@ echo "KV cache quantization (applies to both K and V cache):"
 echo "   1) q8_0  — highest quality,  ~2x VRAM vs q4  (safe floor for quality)"
 echo "   2) q6_0  — very good quality, ~1.5x VRAM vs q4"
 echo "   3) q4_0  — recommended,       lowest VRAM,    minimal quality loss"
-echo "   4) q4_0  — turboquant q3 menu, lowest supported KV cache"
 echo ""
 echo "   Recommendation for 64K context: q4_0 (saves 8-10 GB vs q8_0)"
 echo "   Minimum recommended: q4_0 — going lower risks attention degradation"
@@ -352,7 +352,6 @@ case "${KV_CHOICE:-3}" in
   1) NEW_KV="q8_0" ;;
   2) NEW_KV="q6_0" ;;
   3) NEW_KV="q4_0" ;;
-  4) NEW_KV="q4_0" ;;
   *) NEW_KV="q4_0" ;;
 esac
 
@@ -420,7 +419,7 @@ echo "[Service status]"
 systemctl status "$SERVICE_NAME" --no-pager
 echo ""
 echo "[Bootstrap complete - v0.7.1]"
-echo "  Native llama.cpp web UI : http://<container-ip>:8080"
+echo "  Native llama.cpp web UI : http://<container-ip>:80"
 echo "  Switch models with      : switch-model.sh"
 echo "  GPU device              : gfx1150 (AMD Radeon 890M)"
 echo "  ROCm version            : ${ROCM_VERSION}"
