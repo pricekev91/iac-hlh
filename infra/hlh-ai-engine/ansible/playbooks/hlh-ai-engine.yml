@@ -7,6 +7,6 @@
 
   tasks:
     - name: Run AI engine bootstrap script inside target LXC
-      ansible.builtin.script: ../../configure-ai-engine-inside-lxc.sh
+      ansible.builtin.script: ../files/configure-ai-engine-inside-lxc.sh
       environment:
         HLH_OFFLINE: "{{ (hlh_offline | bool) | ternary('1', '0') }}"
