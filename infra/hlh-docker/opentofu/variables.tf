@@ -1,6 +1,7 @@
-variable "pm_api_url" {
-  description = "Proxmox API URL (e.g., 'https://192.168.1.10:8006/api2/json')"
+variable "pm_endpoint" {
+  description = "Proxmox endpoint (e.g., 'https://192.168.1.10:8006/')"
   type        = string
+  default     = "https://192.168.1.10:8006/"
 }
 
 variable "pm_password" {

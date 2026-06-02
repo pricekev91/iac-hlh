@@ -25,7 +25,7 @@ Options:
   -h, --help       Show this help.
 
 Required for OpenTofu stage:
-  TF_VAR_pm_api_url  (default: https://192.168.1.10:8006/api2/json)
+  TF_VAR_pm_endpoint (default: https://192.168.1.10:8006/)
   TF_VAR_pm_password (or enter interactively when prompted)
 
 Optional:
@@ -36,7 +36,7 @@ EOF
 run_opentofu_stage() {
     [[ -f "${TF_DIR}/main.tf" ]] || { echo "ERROR: OpenTofu config not found at ${TF_DIR}" >&2; exit 1; }
 
-    export TF_VAR_pm_api_url="${TF_VAR_pm_api_url:-https://192.168.1.10:8006/api2/json}"
+    export TF_VAR_pm_endpoint="${TF_VAR_pm_endpoint:-https://192.168.1.10:8006/}"
     if [[ -z "${TF_VAR_pm_password:-}" ]]; then
         read -rsp "Proxmox root@pam password: " TF_VAR_pm_password
         echo
@@ -60,7 +60,7 @@ run_opentofu_stage() {
     fi
 
     TOFU_ARGS=(
-        -var "pm_api_url=${TF_VAR_pm_api_url}"
+        -var "pm_endpoint=${TF_VAR_pm_endpoint}"
         -var "pm_password=${TF_VAR_pm_password}"
         -var "target_node=${TF_VAR_target_node}"
         -var "ostemplate=${TF_VAR_ostemplate}"

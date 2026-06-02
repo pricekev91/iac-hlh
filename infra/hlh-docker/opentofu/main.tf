@@ -1,67 +1,83 @@
 terraform {
   required_providers {
     proxmox = {
-      source  = "telmate/proxmox"
-      version = ">= 2.7.2"
+      source  = "bpg/proxmox"
+      version = ">= 0.66.0"
     }
   }
 }
 
 provider "proxmox" {
-  pm_api_url      = var.pm_api_url
-  pm_user         = "root@pam"
-  pm_password     = var.pm_password
-  pm_tls_insecure = true
+  endpoint  = var.pm_endpoint
+  username  = "root@pam"
+  password  = var.pm_password
+  insecure  = true
 }
 
 # --- HLH-Docker LXC (vmid 102) ---
 # Unprivileged LXC running Docker, Dockhand, LazyDocker
 # See ADR-001.md for architecture decisions
 
-resource "proxmox_lxc" "hlh_docker" {
-  target_node = var.target_node
-  hostname    = "hlh-docker"
-  ostemplate  = var.ostemplate
-  vmid        = 102
-  cores       = var.cores
-  memory      = var.memory
-  swap        = 1024
+resource "proxmox_virtual_environment_container" "hlh_docker" {
+  node_name = var.target_node
+  vm_id     = 102
 
   unprivileged = true
-  start        = true
+  started      = true
 
   features {
     nesting = true
-    keyctl  = true
     fuse    = true
+    keyctl  = true
   }
 
-  network {
-    name   = "eth0"
-    bridge = "vmbr0"
-    ip     = "192.168.1.13/24"
-    gw     = "192.168.1.1"
-    tag    = var.network_tag
+  initialization {
+    hostname = "hlh-docker"
+
+    ip_config {
+      ipv4 {
+        address = "192.168.1.13/24"
+        gateway = "192.168.1.1"
+      }
+    }
+
+    user_account {
+      password = var.lxc_root_password != "" ? var.lxc_root_password : null
+    }
   }
 
-  password = var.lxc_root_password != "" ? var.lxc_root_password : null
-
-  rootfs {
-    storage = "RaidZ1-6TB"
-    size    = "32G"
+  cpu {
+    cores = var.cores
   }
 
-  # ZFS mounts for persistent data
-  # /srv/ct/hlh-docker (docker data directory)
-  # /srv/ct/openspeedtest (reserved for future app)
+  memory {
+    dedicated = var.memory
+    swap      = 1024
+  }
+
+  disk {
+    datastore_id = "RaidZ1-6TB"
+    size         = 32
+  }
+
+  network_interface {
+    name    = "eth0"
+    bridge  = "vmbr0"
+    vlan_id = var.network_tag > 0 ? var.network_tag : null
+  }
+
+  operating_system {
+    template_file_id = var.ostemplate
+    type             = "ubuntu"
+  }
 }
 
 output "lxc_vmid" {
   description = "VMID of the hlh-docker container"
-  value       = proxmox_lxc.hlh_docker.vmid
+  value       = proxmox_virtual_environment_container.hlh_docker.vm_id
 }
 
 output "lxc_hostname" {
   description = "Hostname of the hlh-docker container"
-  value       = proxmox_lxc.hlh_docker.hostname
+  value       = proxmox_virtual_environment_container.hlh_docker.initialization[0].hostname
 }
