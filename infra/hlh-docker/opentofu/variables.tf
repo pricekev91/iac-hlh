@@ -3,13 +3,8 @@ variable "pm_api_url" {
   type        = string
 }
 
-variable "pm_api_token_id" {
-  description = "Proxmox API Token ID (e.g., 'root@pve!tofu-hlh-docker')"
-  type        = string
-}
-
-variable "pm_api_token_secret" {
-  description = "Proxmox API Token Secret"
+variable "pm_password" {
+  description = "Proxmox root@pam password"
   type        = string
   sensitive   = true
 }

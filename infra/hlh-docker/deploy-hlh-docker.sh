@@ -25,9 +25,8 @@ Options:
   -h, --help       Show this help.
 
 Required for OpenTofu stage:
-  TF_VAR_pm_api_url
-  TF_VAR_pm_api_token_id
-  TF_VAR_pm_api_token_secret
+  TF_VAR_pm_api_url  (default: https://192.168.1.10:8006/api2/json)
+  TF_VAR_pm_password (or enter interactively when prompted)
 
 Optional:
   TF_VAR_lxc_root_password (if omitted, LXC root password is not set)
@@ -38,8 +37,11 @@ run_opentofu_stage() {
     [[ -f "${TF_DIR}/main.tf" ]] || { echo "ERROR: OpenTofu config not found at ${TF_DIR}" >&2; exit 1; }
 
     export TF_VAR_pm_api_url="${TF_VAR_pm_api_url:-https://192.168.1.10:8006/api2/json}"
-    export TF_VAR_pm_api_token_id="${TF_VAR_pm_api_token_id:-}"
-    export TF_VAR_pm_api_token_secret="${TF_VAR_pm_api_token_secret:-}"
+    if [[ -z "${TF_VAR_pm_password:-}" ]]; then
+        read -rsp "Proxmox root@pam password: " TF_VAR_pm_password
+        echo
+    fi
+    export TF_VAR_pm_password
     export TF_VAR_target_node="${TF_VAR_target_node:-prox01}"
     export TF_VAR_ostemplate="${TF_VAR_ostemplate:-local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst}"
     export TF_VAR_cores="${TF_VAR_cores:-4}"
@@ -47,8 +49,6 @@ run_opentofu_stage() {
     export TF_VAR_network_tag="${TF_VAR_network_tag:-0}"
     export TF_VAR_lxc_root_password="${TF_VAR_lxc_root_password:-}"
 
-    [[ -n "${TF_VAR_pm_api_token_id}" ]] || { echo "ERROR: TF_VAR_pm_api_token_id is required" >&2; exit 1; }
-    [[ -n "${TF_VAR_pm_api_token_secret}" ]] || { echo "ERROR: TF_VAR_pm_api_token_secret is required" >&2; exit 1; }
 
     cd "${TF_DIR}"
 
@@ -61,8 +61,7 @@ run_opentofu_stage() {
 
     TOFU_ARGS=(
         -var "pm_api_url=${TF_VAR_pm_api_url}"
-        -var "pm_api_token_id=${TF_VAR_pm_api_token_id}"
-        -var "pm_api_token_secret=${TF_VAR_pm_api_token_secret}"
+        -var "pm_password=${TF_VAR_pm_password}"
         -var "target_node=${TF_VAR_target_node}"
         -var "ostemplate=${TF_VAR_ostemplate}"
         -var "cores=${TF_VAR_cores}"
