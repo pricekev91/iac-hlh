@@ -2,51 +2,37 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TF_DIR="${SCRIPT_DIR}/opentofu"
-SECRETS_FILE=""
+BOOTSTRAP_SCRIPT="${SCRIPT_DIR}/ansible/files/configure-ai-engine-inside-lxc.sh"
 
 usage() {
 	cat <<'EOF'
 Usage:
-  ./provision-hlh-ai-engine.sh [apply|plan] [--offline]
-  ./provision-hlh-ai-engine.sh [--apply|--plan] [--offline]
-
-Examples:
   ./provision-hlh-ai-engine.sh
-  ./provision-hlh-ai-engine.sh apply
-  ./provision-hlh-ai-engine.sh plan --offline
 
-Optional local secrets file:
-	${SCRIPT_DIR}/.hlh-secrets
-	${TF_DIR}/.hlh-secrets
-
-Supported variables:
-	TF_VAR_pm_api_url
-	TF_VAR_pm_api_token_id
-	TF_VAR_pm_api_token_secret
+This is the direct Proxmox bootstrap path (no OpenTofu):
+  1) Create privileged LXC 101 (ai-engine)
+  2) Configure GPU passthrough
+  3) Start container
+  4) Push/run in-container bootstrap script
 EOF
 }
 
-MODE="apply"
-OFFLINE=0
+LXC_ID=101
+LXC_NAME="ai-engine"
+LXC_HOSTNAME="ai-engine"
+LXC_IMAGE="local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
+POOL="RaidZ1-6TB"
+MODEL_HOST_DIR="/srv/ai/models"
+MODEL_LXC_DIR="/srv/ai/models"
+LXC_ROOTFS_SIZE="64"
+LXC_MEMORY="49152"
+LXC_CORES="12"
+LXC_IP_CONFIG="192.168.1.12/24"
+LXC_GATEWAY="192.168.1.1"
+ROCM_VERSION="7.2.3"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-		apply)
-			MODE="apply"
-			;;
-		plan)
-			MODE="plan"
-			;;
-		--apply)
-			MODE="apply"
-			;;
-		--plan)
-			MODE="plan"
-			;;
-		--offline)
-			OFFLINE=1
-			;;
 		-h|--help)
 			usage
 			exit 0
@@ -60,69 +46,54 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
-[[ -f "${TF_DIR}/main.tf" ]] || { echo "ERROR: OpenTofu config not found at ${TF_DIR}" >&2; exit 1; }
+command -v pct >/dev/null 2>&1 || { echo "ERROR: pct command not found. Run on Proxmox host." >&2; exit 1; }
+[[ -f "$BOOTSTRAP_SCRIPT" ]] || { echo "ERROR: Bootstrap script not found: $BOOTSTRAP_SCRIPT" >&2; exit 1; }
 
-for candidate in "${TF_DIR}/.hlh-secrets" "${SCRIPT_DIR}/.hlh-secrets"; do
-	if [[ -f "$candidate" ]]; then
-		SECRETS_FILE="$candidate"
-		break
-	fi
-done
 
-if [[ -n "$SECRETS_FILE" ]]; then
-	set -a
-	# shellcheck disable=SC1090
-	source "$SECRETS_FILE"
-	set +a
+echo "[1/6] Creating model storage directory on ${POOL}..."
+mkdir -p "${MODEL_HOST_DIR}"
+chown 0:0 "${MODEL_HOST_DIR}"
+chmod 775 "${MODEL_HOST_DIR}"
+
+if pct status "${LXC_ID}" >/dev/null 2>&1; then
+	echo "ERROR: LXC ${LXC_ID} already exists. Delete it first or change LXC_ID in script." >&2
+	exit 1
 fi
 
-export TF_VAR_pm_api_url="${TF_VAR_pm_api_url:-https://192.168.1.10:8006/api2/json}"
+echo "[2/6] Creating privileged Ubuntu LXC (${LXC_ID}, ${LXC_NAME}) on ${POOL}..."
+pct create "${LXC_ID}" "${LXC_IMAGE}" \
+	--storage "${POOL}" \
+	--rootfs "${LXC_ROOTFS_SIZE}" \
+	--hostname "${LXC_HOSTNAME}" \
+	--memory "${LXC_MEMORY}" \
+	--cores "${LXC_CORES}" \
+	--features nesting=1,keyctl=1 \
+	--net0 name=eth0,bridge=vmbr0,ip=${LXC_IP_CONFIG},gw=${LXC_GATEWAY} \
+	--unprivileged 0 \
+	--onboot 1 \
+	--mp0 "${MODEL_HOST_DIR},mp=${MODEL_LXC_DIR}" \
+	--description "llama.cpp AI engine with ROCm ${ROCM_VERSION}, model storage on ${POOL}"
 
-if [[ -z "${TF_VAR_pm_api_token_id:-}" ]]; then
-	read -rp "Proxmox API token ID (example: tofu@pve!tofu-hlh-ai-engine): " TF_VAR_pm_api_token_id
-	export TF_VAR_pm_api_token_id
-fi
+echo "[3/6] Adding GPU/ROCm passthrough devices..."
+cat >> "/etc/pve/lxc/${LXC_ID}.conf" <<'LXCCONF'
 
-if [[ -z "${TF_VAR_pm_api_token_secret:-}" ]]; then
-	read -rsp "Proxmox API token secret: " TF_VAR_pm_api_token_secret
-	echo
-	export TF_VAR_pm_api_token_secret
-fi
+# GPU passthrough - DRI (render) + KFD (ROCm/HIP compute)
+# KFD major on this host: 511
+lxc.cgroup2.devices.allow: c 226:* rwm
+lxc.cgroup2.devices.allow: c 511:0 rwm
+lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
+lxc.mount.entry: /dev/kfd dev/kfd none bind,optional,create=file
+LXCCONF
 
-cd "${TF_DIR}"
+echo "[4/6] Starting LXC ${LXC_ID}..."
+pct start "${LXC_ID}"
+sleep 5
 
-if [[ "$OFFLINE" -eq 1 ]]; then
-	tofu init -lockfile=readonly
-else
-	tofu init
-fi
+echo "[5/6] Running in-container bootstrap..."
+pct exec "${LXC_ID}" -- mkdir -p /root/ai-engine-bootstrap
+pct push "${LXC_ID}" "$BOOTSTRAP_SCRIPT" /root/ai-engine-bootstrap/configure-ai-engine-inside-lxc.sh --perms 0755
+pct exec "${LXC_ID}" -- bash /root/ai-engine-bootstrap/configure-ai-engine-inside-lxc.sh
 
-TOFU_ARGS=(
-	-var "pm_api_url=${TF_VAR_pm_api_url}"
-	-var "pm_api_token_id=${TF_VAR_pm_api_token_id}"
-	-var "pm_api_token_secret=${TF_VAR_pm_api_token_secret}"
-)
-
-if [[ "$MODE" == "plan" ]]; then
-	if [[ "$OFFLINE" -eq 1 ]]; then
-		tofu plan -refresh=false "${TOFU_ARGS[@]}"
-	else
-		tofu plan "${TOFU_ARGS[@]}"
-	fi
-	exit 0
-fi
-
-if [[ "$OFFLINE" -eq 1 ]]; then
-	tofu plan -refresh=false "${TOFU_ARGS[@]}"
-else
-	tofu plan "${TOFU_ARGS[@]}"
-fi
-
-echo ""
-read -rp "Apply hlh-ai-engine LXC (vmid 101)? [y/N] " confirm
-if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-	echo "Aborted."
-	exit 0
-fi
-
-tofu apply -auto-approve "${TOFU_ARGS[@]}"
+echo "[6/6] Deployment complete. LXC ${LXC_ID} (${LXC_NAME}) is running."
+echo "Model storage: ${MODEL_HOST_DIR} (host) <-> ${MODEL_LXC_DIR} (container) on ${POOL}"
+echo "Access llama-server at http://<container-ip>:8080"
