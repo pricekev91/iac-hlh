@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="${SCRIPT_DIR}/opentofu"
+SECRETS_FILE=""
 
 usage() {
 	cat <<'EOF'
@@ -14,6 +15,15 @@ Examples:
   ./provision-hlh-ai-engine.sh
   ./provision-hlh-ai-engine.sh apply
   ./provision-hlh-ai-engine.sh plan --offline
+
+Optional local secrets file:
+	${SCRIPT_DIR}/.hlh-secrets
+	${TF_DIR}/.hlh-secrets
+
+Supported variables:
+	TF_VAR_pm_api_url
+	TF_VAR_pm_api_token_id
+	TF_VAR_pm_api_token_secret
 EOF
 }
 
@@ -51,6 +61,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -f "${TF_DIR}/main.tf" ]] || { echo "ERROR: OpenTofu config not found at ${TF_DIR}" >&2; exit 1; }
+
+for candidate in "${TF_DIR}/.hlh-secrets" "${SCRIPT_DIR}/.hlh-secrets"; do
+	if [[ -f "$candidate" ]]; then
+		SECRETS_FILE="$candidate"
+		break
+	fi
+done
+
+if [[ -n "$SECRETS_FILE" ]]; then
+	set -a
+	# shellcheck disable=SC1090
+	source "$SECRETS_FILE"
+	set +a
+fi
 
 export TF_VAR_pm_api_url="${TF_VAR_pm_api_url:-https://192.168.1.10:8006/api2/json}"
 

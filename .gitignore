@@ -1,3 +1,5 @@
+.hlh-secrets
+**/.hlh-secrets
 # OpenTofu / Terraform
 .terraform/
 .terraform.lock.hcl
