@@ -146,6 +146,7 @@ EXTRA_VARS=("hlh_offline=$([[ "$OFFLINE" -eq 1 ]] && echo true || echo false)")
 [[ -n "$HOST_OVERRIDE" ]] && EXTRA_VARS+=("ansible_host=${HOST_OVERRIDE}")
 
 export ANSIBLE_HOST_KEY_CHECKING=False
+export ANSIBLE_ROLES_PATH="${ANSIBLE_DIR}/roles:${ANSIBLE_ROLES_PATH:-}"
 
 ANSIBLE_ARGS=(
     -i "$INVENTORY"
