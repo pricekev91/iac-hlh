@@ -51,8 +51,8 @@ cd "$ANSIBLE_DIR"
 
 # Ensure ansible is available.
 if ! command -v ansible-playbook >/dev/null 2>&1; then
-    echo "=== ansible not found, installing via pip3 ==="
-    pip3 install --quiet ansible
+    echo "=== ansible not found, installing via apt ==="
+    apt-get install -y ansible
 fi
 
 # Install collection requirements only when online.
