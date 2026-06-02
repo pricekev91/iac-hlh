@@ -8,17 +8,18 @@ PLAYBOOK="${ANSIBLE_DIR}/playbooks/hlh-docker.yml"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 HOST_OVERRIDE=""
 OFFLINE=0
-USE_SSH_PASSWORD=0
+USE_SSH_PASSWORD=1
 
 usage() {
     cat <<'EOF'
 Usage:
-    ./configure-hlh-docker.sh [--host <ip>] [--offline] [--ask-pass]
+    ./configure-hlh-docker.sh [--host <ip>] [--offline] [--ask-pass|--use-key]
 
 Options:
   --host <ip>  Override target host defined in inventory.
   --offline    Skip online dependency fetches where possible.
-    --ask-pass   Prompt for SSH password instead of using SSH key.
+    --ask-pass   Use SSH password authentication (default).
+    --use-key    Use SSH key authentication with SSH_KEY path.
   -h, --help   Show this help.
 EOF
 }
@@ -35,6 +36,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ask-pass|--password)
             USE_SSH_PASSWORD=1
+            ;;
+        --use-key)
+            USE_SSH_PASSWORD=0
             ;;
         -h|--help)
             usage
@@ -75,9 +79,8 @@ if [[ "$OFFLINE" -eq 0 && -f requirements.yml ]]; then
     ansible-galaxy collection install -r requirements.yml
 fi
 
-if [[ "$USE_SSH_PASSWORD" -eq 0 && ! -f "$SSH_KEY" ]]; then
-    echo "=== SSH key not found at $SSH_KEY; switching to password prompt mode ==="
-    USE_SSH_PASSWORD=1
+if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
+    [[ -f "$SSH_KEY" ]] || { echo "ERROR: SSH key not found at $SSH_KEY (or run with --ask-pass)." >&2; exit 1; }
 fi
 
 if [[ "$USE_SSH_PASSWORD" -eq 1 ]] && ! command -v sshpass >/dev/null 2>&1; then
