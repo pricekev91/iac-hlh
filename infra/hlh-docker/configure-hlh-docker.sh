@@ -9,17 +9,20 @@ SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 HOST_OVERRIDE=""
 OFFLINE=0
 USE_SSH_PASSWORD=1
+SSH_PASSWORD=""
+LXC_VMID="${LXC_VMID:-102}"
 
 usage() {
     cat <<'EOF'
 Usage:
-    ./configure-hlh-docker.sh [--host <ip>] [--offline] [--ask-pass|--use-key]
+    ./configure-hlh-docker.sh [--host <ip>] [--offline] [--ask-pass|--use-key] [--vmid <id>]
 
 Options:
   --host <ip>  Override target host defined in inventory.
   --offline    Skip online dependency fetches where possible.
     --ask-pass   Use SSH password authentication (default).
     --use-key    Use SSH key authentication with SSH_KEY path.
+    --vmid <id>  LXC VMID for password/sshd bootstrap via pct (default: 102).
   -h, --help   Show this help.
 EOF
 }
@@ -39,6 +42,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --use-key)
             USE_SSH_PASSWORD=0
+            ;;
+        --vmid)
+            [[ $# -ge 2 ]] || { echo "ERROR: --vmid requires a value" >&2; exit 1; }
+            LXC_VMID="$2"
+            shift
             ;;
         -h|--help)
             usage
@@ -96,6 +104,25 @@ if [[ "$OFFLINE" -eq 0 ]]; then
     ssh-keyscan -H "$TARGET_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
 fi
 
+if [[ "$USE_SSH_PASSWORD" -eq 1 ]]; then
+    if [[ -z "$SSH_PASSWORD" ]]; then
+        read -rsp "LXC root SSH password: " SSH_PASSWORD
+        echo
+    fi
+
+    # On Proxmox host, bootstrap root password + SSH policy directly in container.
+    if command -v pct >/dev/null 2>&1 && pct status "$LXC_VMID" >/dev/null 2>&1; then
+        printf 'root:%s\n' "$SSH_PASSWORD" | pct exec "$LXC_VMID" -- chpasswd || true
+        pct exec "$LXC_VMID" -- bash -lc "
+            if [ -f /etc/ssh/sshd_config ]; then
+                sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+                sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+            fi
+            systemctl restart ssh || systemctl restart sshd || service ssh restart || true
+        " || true
+    fi
+fi
+
 # If key auth is selected, verify it actually works. If not, fall back to password prompt.
 if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
     SSH_TEST_OPTS=(
@@ -128,7 +155,7 @@ ANSIBLE_ARGS=(
 )
 
 if [[ "$USE_SSH_PASSWORD" -eq 1 ]]; then
-    ANSIBLE_ARGS+=(--ask-pass)
+    ANSIBLE_ARGS+=(-e "ansible_password=${SSH_PASSWORD}")
 else
     ANSIBLE_ARGS+=(--private-key "$SSH_KEY")
 fi
