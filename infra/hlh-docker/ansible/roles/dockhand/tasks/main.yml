@@ -33,7 +33,7 @@
 
 - name: Verify Dockhand container is running
   ansible.builtin.command:
-    cmd: docker inspect --format='{{.State.Running}}' dockhand
+    cmd: "docker inspect --format='{{ '{{' }}.State.Running{{ '}}' }}' dockhand"
   register: dockhand_status
   changed_when: false
 
