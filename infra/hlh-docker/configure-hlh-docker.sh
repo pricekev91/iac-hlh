@@ -47,6 +47,13 @@ done
 [[ -f "$PLAYBOOK" ]] || { echo "ERROR: Playbook not found: $PLAYBOOK" >&2; exit 1; }
 [[ -f "$INVENTORY" ]] || { echo "ERROR: Inventory not found: $INVENTORY" >&2; exit 1; }
 
+TARGET_HOST="$HOST_OVERRIDE"
+if [[ -z "$TARGET_HOST" ]]; then
+    TARGET_HOST="$(awk '/ansible_host:/ { print $2; exit }' "$INVENTORY")"
+fi
+
+[[ -n "$TARGET_HOST" ]] || { echo "ERROR: Could not determine target host from inventory or --host." >&2; exit 1; }
+
 cd "$ANSIBLE_DIR"
 
 # Ensure ansible is available.
@@ -60,11 +67,22 @@ if [[ "$OFFLINE" -eq 0 && -f requirements.yml ]]; then
     ansible-galaxy collection install -r requirements.yml
 fi
 
+# LXC rebuilds often change SSH host keys. Refresh known_hosts automatically.
+mkdir -p "$HOME/.ssh"
+touch "$HOME/.ssh/known_hosts"
+ssh-keygen -R "$TARGET_HOST" >/dev/null 2>&1 || true
+if [[ "$OFFLINE" -eq 0 ]]; then
+    ssh-keyscan -H "$TARGET_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
+fi
+
 EXTRA_VARS=("hlh_offline=$([[ "$OFFLINE" -eq 1 ]] && echo true || echo false)")
 [[ -n "$HOST_OVERRIDE" ]] && EXTRA_VARS+=("ansible_host=${HOST_OVERRIDE}")
+
+export ANSIBLE_HOST_KEY_CHECKING=False
 
 ansible-playbook \
     -i "$INVENTORY" \
     "$PLAYBOOK" \
     --private-key "$SSH_KEY" \
+    --ssh-common-args "-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=accept-new" \
     -e "${EXTRA_VARS[*]}"
