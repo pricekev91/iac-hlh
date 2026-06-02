@@ -134,14 +134,28 @@ if [ -f "$DEFAULT_MODEL_FILE" ]; then
   ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
   echo "Default model already present: $ACTIVE_MODEL_FILE"
 else
-  mapfile -t EXISTING_MODELS < <(find "$MODEL_DIR" -maxdepth 1 -type f -name '*.gguf' -printf '%f\n' | sort)
-  if [ "${#EXISTING_MODELS[@]}" -gt 0 ]; then
-    ACTIVE_MODEL_FILE="${EXISTING_MODELS[0]}"
-    echo "Using existing model from mounted storage: $ACTIVE_MODEL_FILE"
-  else
-    ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
-    echo "No existing models found; downloading default model: $ACTIVE_MODEL_FILE"
-    wget -O "$ACTIVE_MODEL_FILE" "$DEFAULT_MODEL_URL"
+  PREFERRED_MODELS=(
+    "Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf"
+    "Qwen_Qwen3-Coder-Next-Q4_K_M.gguf"
+  )
+  for MODEL_CANDIDATE in "${PREFERRED_MODELS[@]}"; do
+    if [ -f "$MODEL_DIR/$MODEL_CANDIDATE" ]; then
+      ACTIVE_MODEL_FILE="$MODEL_CANDIDATE"
+      echo "Using preferred existing model from mounted storage: $ACTIVE_MODEL_FILE"
+      break
+    fi
+  done
+
+  if [ -z "${ACTIVE_MODEL_FILE:-}" ]; then
+    mapfile -t EXISTING_MODELS < <(find "$MODEL_DIR" -maxdepth 1 -type f -name '*.gguf' -printf '%f\n' | sort)
+    if [ "${#EXISTING_MODELS[@]}" -gt 0 ]; then
+      ACTIVE_MODEL_FILE="${EXISTING_MODELS[0]}"
+      echo "Using existing model from mounted storage: $ACTIVE_MODEL_FILE"
+    else
+      ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
+      echo "No existing models found; downloading default model: $ACTIVE_MODEL_FILE"
+      wget -O "$ACTIVE_MODEL_FILE" "$DEFAULT_MODEL_URL"
+    fi
   fi
 fi
 
