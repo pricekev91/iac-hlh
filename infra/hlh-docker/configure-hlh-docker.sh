@@ -142,8 +142,12 @@ if [[ "$USE_SSH_PASSWORD" -eq 1 ]] && ! command -v sshpass >/dev/null 2>&1; then
     apt-get install -y sshpass
 fi
 
-EXTRA_VARS=("hlh_offline=$([[ "$OFFLINE" -eq 1 ]] && echo true || echo false)")
-[[ -n "$HOST_OVERRIDE" ]] && EXTRA_VARS+=("ansible_host=${HOST_OVERRIDE}")
+HLH_OFFLINE_BOOL="false"
+[[ "$OFFLINE" -eq 1 ]] && HLH_OFFLINE_BOOL="true"
+EXTRA_VARS_JSON="{\"hlh_offline\": ${HLH_OFFLINE_BOOL}}"
+if [[ -n "$HOST_OVERRIDE" ]]; then
+    EXTRA_VARS_JSON="{\"hlh_offline\": ${HLH_OFFLINE_BOOL}, \"ansible_host\": \"${HOST_OVERRIDE}\"}"
+fi
 
 export ANSIBLE_HOST_KEY_CHECKING=False
 export ANSIBLE_ROLES_PATH="${ANSIBLE_DIR}/roles:${ANSIBLE_ROLES_PATH:-}"
@@ -152,7 +156,7 @@ ANSIBLE_ARGS=(
     -i "$INVENTORY"
     "$PLAYBOOK"
     --ssh-common-args "-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=accept-new"
-    -e "${EXTRA_VARS[*]}"
+    -e "$EXTRA_VARS_JSON"
 )
 
 if [[ "$USE_SSH_PASSWORD" -eq 1 ]]; then
