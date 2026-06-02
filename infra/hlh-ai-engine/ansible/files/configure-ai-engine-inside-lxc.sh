@@ -221,7 +221,7 @@ rewrite_execstart() {
       done=1
       print "ExecStart=/opt/llama.cpp/build/bin/llama-server \\"
       print "  --model " model " \\"
-      print "  --host 0.0.0.0 --port 80 \\\" 
+      print "  --host 0.0.0.0 --port 80 \\"
       print "  --ctx-size " ctx " \\"
       print "  -ngl 99 \\"
       print "  --batch-size 512 \\"
