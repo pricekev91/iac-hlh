@@ -7,7 +7,7 @@ BOOTSTRAP_SCRIPT="${SCRIPT_DIR}/ansible/files/configure-ai-engine-inside-lxc.sh"
 usage() {
 	cat <<'EOF'
 Usage:
-  ./provision-hlh-ai-engine.sh
+	./deploy-hlh-ai-engine.sh
 
 This is the direct Proxmox bootstrap path (no OpenTofu):
   1) Create privileged LXC 101 (ai-engine)
