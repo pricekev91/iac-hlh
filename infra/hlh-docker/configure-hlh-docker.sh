@@ -57,6 +57,9 @@ if [[ -z "$TARGET_HOST" ]]; then
     TARGET_HOST="$(awk '/ansible_host:/ { print $2; exit }' "$INVENTORY")"
 fi
 
+TARGET_USER="$(awk '/ansible_user:/ { print $2; exit }' "$INVENTORY")"
+TARGET_USER="${TARGET_USER:-root}"
+
 [[ -n "$TARGET_HOST" ]] || { echo "ERROR: Could not determine target host from inventory or --host." >&2; exit 1; }
 
 cd "$ANSIBLE_DIR"
@@ -88,6 +91,25 @@ touch "$HOME/.ssh/known_hosts"
 ssh-keygen -R "$TARGET_HOST" >/dev/null 2>&1 || true
 if [[ "$OFFLINE" -eq 0 ]]; then
     ssh-keyscan -H "$TARGET_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
+fi
+
+# If key auth is selected, verify it actually works. If not, fall back to password prompt.
+if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
+    SSH_TEST_OPTS=(
+        -o BatchMode=yes
+        -o ConnectTimeout=5
+        -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+        -o StrictHostKeyChecking=accept-new
+    )
+    if ! ssh "${SSH_TEST_OPTS[@]}" -i "$SSH_KEY" "${TARGET_USER}@${TARGET_HOST}" true >/dev/null 2>&1; then
+        echo "=== SSH key auth failed for ${TARGET_USER}@${TARGET_HOST}; switching to password prompt mode ==="
+        USE_SSH_PASSWORD=1
+    fi
+fi
+
+if [[ "$USE_SSH_PASSWORD" -eq 1 ]] && ! command -v sshpass >/dev/null 2>&1; then
+    echo "=== sshpass not found, installing via apt ==="
+    apt-get install -y sshpass
 fi
 
 EXTRA_VARS=("hlh_offline=$([[ "$OFFLINE" -eq 1 ]] && echo true || echo false)")

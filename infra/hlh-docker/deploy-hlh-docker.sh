@@ -29,7 +29,7 @@ Required for OpenTofu stage:
   TF_VAR_pm_password (or enter interactively when prompted)
 
 Optional:
-  TF_VAR_lxc_root_password (if omitted, LXC root password is not set)
+    TF_VAR_lxc_root_password (if omitted, deploy will prompt in apply mode)
 EOF
 }
 
@@ -48,6 +48,16 @@ run_opentofu_stage() {
     export TF_VAR_memory="${TF_VAR_memory:-4096}"
     export TF_VAR_network_tag="${TF_VAR_network_tag:-0}"
     export TF_VAR_lxc_root_password="${TF_VAR_lxc_root_password:-}"
+
+    if [[ "$MODE" == "apply" && -z "${TF_VAR_lxc_root_password}" ]]; then
+        read -rsp "LXC root SSH password (used by Ansible): " TF_VAR_lxc_root_password
+        echo
+        if [[ -z "${TF_VAR_lxc_root_password}" ]]; then
+            echo "ERROR: LXC root SSH password cannot be empty in apply mode." >&2
+            exit 1
+        fi
+        export TF_VAR_lxc_root_password
+    fi
 
 
     cd "${TF_DIR}"
