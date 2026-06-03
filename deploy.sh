@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOOTSTRAP_SCRIPT="${ROOT_DIR}/bootstrap/zfsbootstrap.sh"
-AI_ENGINE_DEPLOY="${ROOT_DIR}/hlh-ai-engine/infra/hlh-ai-engine/deploy-hlh-ai-engine.sh"
-DOCKER_DEPLOY="${ROOT_DIR}/hlh-docker/infra/hlh-docker/deploy-hlh-docker.sh"
+AI_ENGINE_DEPLOY="${ROOT_DIR}/hlh-ai-engine/deploy-hlh-ai-engine.sh"
+DOCKER_DEPLOY="${ROOT_DIR}/hlh-docker/deploy-hlh-docker.sh"
 
 require_executable() {
 	local path="$1"
