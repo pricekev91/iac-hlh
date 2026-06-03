@@ -1,0 +1,6 @@
+[submodule "hlh-ai-engine"]
+	path = hlh-ai-engine
+	url = git@github.com:pricekev91/hlh-ai-engine.git
+[submodule "hlh-docker"]
+	path = hlh-docker
+	url = git@github.com:pricekev91/hlh-docker.git
