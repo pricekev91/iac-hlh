@@ -1,9 +1,0 @@
-[submodule "hlh-ai-engine"]
-	path = hlh-ai-engine
-	url = https://github.com/pricekev91/hlh-ai-engine.git
-	branch = main
-
-[submodule "hlh-docker"]
-	path = hlh-docker
-	url = https://github.com/pricekev91/hlh-docker.git
-	branch = main

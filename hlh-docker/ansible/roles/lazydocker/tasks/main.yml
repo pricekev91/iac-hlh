@@ -1,0 +1,54 @@
+---
+- name: Download and install LazyDocker binary
+  ansible.builtin.get_url:
+    url: "https://github.com/jesseduffield/lazydocker/releases/download/v0.25.2/lazydocker_0.25.2_Linux_x86_64.tar.gz"
+    dest: /tmp/lazydocker.tar.gz
+    mode: "0644"
+  when: not (hlh_offline | bool)
+
+- name: Extract LazyDocker binary
+  ansible.builtin.unarchive:
+    src: /tmp/lazydocker.tar.gz
+    dest: /tmp/
+    remote_src: true
+  when: not (hlh_offline | bool)
+
+- name: Install LazyDocker to /usr/local/bin
+  ansible.builtin.copy:
+    src: /tmp/lazydocker
+    dest: /usr/local/bin/lazydocker
+    mode: "0755"
+    remote_src: true
+  when: not (hlh_offline | bool)
+
+- name: Clean up LazyDocker archive
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/lazydocker.tar.gz
+    - /tmp/lazydocker
+  when: not (hlh_offline | bool)
+
+- name: Verify LazyDocker binary exists in offline mode
+  ansible.builtin.stat:
+    path: /usr/local/bin/lazydocker
+  register: lazydocker_binary
+  when: hlh_offline | bool
+
+- name: Fail if LazyDocker is missing in offline mode
+  ansible.builtin.fail:
+    msg: "Offline mode requested, but /usr/local/bin/lazydocker is not present. Install it once online first."
+  when:
+    - hlh_offline | bool
+    - not lazydocker_binary.stat.exists
+
+- name: Verify LazyDocker installation
+  ansible.builtin.command:
+    cmd: lazydocker --version
+  register: lazydocker_version
+  changed_when: false
+
+- name: Show LazyDocker version
+  ansible.builtin.debug:
+    msg: "LazyDocker installed: {{ lazydocker_version.stdout }}"
