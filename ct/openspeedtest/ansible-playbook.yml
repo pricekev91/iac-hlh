@@ -1,7 +1,7 @@
 ---
 # OpenSpeedTest deployment via Ansible
-# Deploys to hlh-docker host (192.168.1.13) with bridge networking
-# Container reachable at http://192.168.1.13:8080
+# Deploys to hlh-docker host (192.168.1.13) with macvlan networking
+# Container reachable at http://192.168.1.20:80
 
 - name: Deploy OpenSpeedTest
   hosts: hlh_docker
@@ -11,7 +11,6 @@
     compose_file: "{{ ct_dir }}/docker-compose.yml"
     container_name: openspeedtest
     container_image: openspeedtest/latest
-    container_port: "8080"
 
   pre_tasks:
     - name: Ensure ct directory exists
@@ -31,10 +30,22 @@
               image: "{{ container_image }}"
               container_name: "{{ container_name }}"
               restart: unless-stopped
-              ports:
-                - "{{ container_port }}:80"
               environment:
                 - MODE=standalone
+                - WEB_PORT=80
+              networks:
+                macvlan_net:
+                  ipv4_address: 192.168.1.20
+
+          networks:
+            macvlan_net:
+              driver: macvlan
+              driver_opts:
+                parent: macvlan0
+              ipam:
+                config:
+                  - subnet: "192.168.1.0/24"
+                    gateway: "192.168.1.1"
         dest: "{{ compose_file }}"
         mode: "0644"
 
@@ -73,8 +84,15 @@
         that:
           - container_status.stdout == "true"
         fail_msg: "{{ container_name }} is not running!"
-        success_msg: "{{ container_name }} is running on 192.168.1.13:8080"
+        success_msg: "{{ container_name }} is running on http://192.168.1.20:80"
+
+    - name: Curl service endpoint
+      ansible.builtin.uri:
+        url: "http://192.168.1.20:80"
+        status_code: 200
+      register: health_check
+      changed_when: false
 
     - name: Display container status
       ansible.builtin.debug:
-        msg: "OpenSpeedTest is running on http://192.168.1.13:8080"
+        msg: "OpenSpeedTest is running on http://192.168.1.20:80"
