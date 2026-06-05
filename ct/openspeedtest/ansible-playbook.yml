@@ -1,7 +1,11 @@
 ---
 # OpenSpeedTest deployment via Ansible
-# Deploys to 192.168.1.20 with bridge networking
-# Container reachable at http://192.168.1.20:80
+# Runs on hlh-docker LXC (192.168.1.13), container reachable at 192.168.1.20:80
+#
+# Topology:
+#   prox01 (192.168.1.10) — Proxmox 9.2 host
+#   hlh-docker LXC (192.168.1.13) — Docker engine
+#   openspeedtest container (192.168.1.20:80) — pulled from hub.docker.com
 
 - name: Deploy OpenSpeedTest
   hosts: hlh_docker
@@ -12,6 +16,7 @@
     container_name: openspeedtest
     container_image: openspeedtest/latest
     host_port: "80"
+    target_ip: "192.168.1.20"
 
   pre_tasks:
     - name: Ensure ct directory exists
@@ -21,7 +26,14 @@
         mode: "0755"
 
   tasks:
-    # --- 1. Write docker-compose.yml ---
+    # --- 1. Add IP alias for container (so port bind works) ---
+    - name: Add 192.168.1.20/24 as alias on eth0
+      ansible.builtin.command:
+        cmd: "ip addr add {{ target_ip }}/24 dev eth0 2>/dev/null || true"
+      changed_when: false
+      failed_when: false
+
+    # --- 2. Write docker-compose.yml ---
     - name: Write docker-compose.yml
       ansible.builtin.copy:
         content: |
@@ -32,20 +44,20 @@
               container_name: "{{ container_name }}"
               restart: unless-stopped
               ports:
-                - "{{ host_port }}:80"
+                - "{{ target_ip }}:{{ host_port }}:80"
               environment:
                 - MODE=standalone
         dest: "{{ compose_file }}"
         mode: "0644"
 
-    # --- 2. Pull image ---
+    # --- 3. Pull image ---
     - name: Pull OpenSpeedTest image
       ansible.builtin.command:
         cmd: docker pull {{ container_image }}
       register: image_pull
       changed_when: image_pull.rc == 0
 
-    # --- 3. Remove existing container (idempotent) ---
+    # --- 4. Remove existing container (idempotent) ---
     - name: Remove existing container
       ansible.builtin.command:
         cmd: docker rm -f {{ container_name }}
@@ -53,7 +65,7 @@
       changed_when: container_rm.rc == 0
       failed_when: false
 
-    # --- 4. Deploy via docker compose ---
+    # --- 5. Deploy via docker compose ---
     - name: Deploy OpenSpeedTest stack
       community.docker.docker_compose_v2:
         project_src: "{{ ct_dir }}"
@@ -61,7 +73,7 @@
         state: present
       register: compose_result
 
-    # --- 5. Verify ---
+    # --- 6. Verify ---
     - name: Verify container is running
       ansible.builtin.command:
         cmd: "docker inspect --format='{{ '{{' }}.State.Running{{ '}}' }}' {{ container_name }}"
@@ -73,15 +85,15 @@
         that:
           - container_status.stdout == "true"
         fail_msg: "{{ container_name }} is not running!"
-        success_msg: "{{ container_name }} is running on http://192.168.1.20:80"
+        success_msg: "{{ container_name }} is running on http://{{ target_ip }}:80"
 
     - name: Curl service endpoint
       ansible.builtin.uri:
-        url: "http://192.168.1.20:80"
+        url: "http://{{ target_ip }}:80"
         status_code: 200
       register: health_check
       changed_when: false
 
     - name: Display container status
       ansible.builtin.debug:
-        msg: "OpenSpeedTest is running on http://192.168.1.20:80"
+        msg: "OpenSpeedTest is running on http://{{ target_ip }}:80"
