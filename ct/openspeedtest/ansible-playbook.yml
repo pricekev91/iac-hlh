@@ -31,12 +31,10 @@
       community.docker.docker_network:
         name: hlh_macvlan
         driver: macvlan
-        ipam_options:
-          driver: default
-          config:
-            - subnet: "192.168.1.0/24"
-              gateway: "192.168.1.1"
-        opts:
+        ipam_config:
+          - subnet: "192.168.1.0/24"
+            gateway: "192.168.1.1"
+        driver_options:
           parent: macvlan0
         state: present
       register: net_created
