@@ -1,10 +1,10 @@
 # OpenSpeedTest
 
-Service deployed on `hlh-docker` host (192.168.1.13) for WiFi performance benchmarking.
+Service deployed on `hlh-docker` host (192.168.1.20) for WiFi performance benchmarking.
 
 ## Access
 
-- URL: http://192.168.1.13:80
+- URL: http://192.168.1.20:80
 - Purpose: Benchmark Wi-Fi performance independent of ISP
 
 ## Deploy
@@ -22,7 +22,7 @@ Options:
 
 - **Image:** `openspeedtest/latest`
 - **Network:** Docker bridge with port mapping (macvlan not supported inside LXC)
-- **Host IP:** 192.168.1.13
+- **Host IP:** 192.168.1.20
 - **Host Port:** 80 (mapped to container port 80)
 - **Container Port:** 80
 - **Compose:** dockhand/Portainer managed from `/srv/ct/openspeedtest`

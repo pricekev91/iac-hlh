@@ -1,7 +1,7 @@
 ---
 # OpenSpeedTest deployment via Ansible
-# Deploys to hlh-docker host (192.168.1.13) with bridge networking
-# Container reachable at http://192.168.1.13:80
+# Deploys to 192.168.1.20 with bridge networking
+# Container reachable at http://192.168.1.20:80
 
 - name: Deploy OpenSpeedTest
   hosts: hlh_docker
@@ -73,15 +73,15 @@
         that:
           - container_status.stdout == "true"
         fail_msg: "{{ container_name }} is not running!"
-        success_msg: "{{ container_name }} is running on http://192.168.1.13:80"
+        success_msg: "{{ container_name }} is running on http://192.168.1.20:80"
 
     - name: Curl service endpoint
       ansible.builtin.uri:
-        url: "http://192.168.1.13:80"
+        url: "http://192.168.1.20:80"
         status_code: 200
       register: health_check
       changed_when: false
 
     - name: Display container status
       ansible.builtin.debug:
-        msg: "OpenSpeedTest is running on http://192.168.1.13:80"
+        msg: "OpenSpeedTest is running on http://192.168.1.20:80"
