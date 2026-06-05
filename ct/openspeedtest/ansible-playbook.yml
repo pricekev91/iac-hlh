@@ -1,0 +1,80 @@
+---
+# OpenSpeedTest deployment via Ansible
+# Deploys to hlh-docker host (192.168.1.13) with bridge networking
+# Container reachable at http://192.168.1.13:8080
+
+- name: Deploy OpenSpeedTest
+  hosts: hlh_docker
+  become: true
+  vars:
+    ct_dir: /srv/ct/openspeedtest
+    compose_file: "{{ ct_dir }}/docker-compose.yml"
+    container_name: openspeedtest
+    container_image: openspeedtest/latest
+    container_port: "8080"
+
+  pre_tasks:
+    - name: Ensure ct directory exists
+      ansible.builtin.file:
+        path: "{{ ct_dir }}"
+        state: directory
+        mode: "0755"
+
+  tasks:
+    # --- 1. Write docker-compose.yml ---
+    - name: Write docker-compose.yml
+      ansible.builtin.copy:
+        content: |
+          ---
+          services:
+            openspeedtest:
+              image: "{{ container_image }}"
+              container_name: "{{ container_name }}"
+              restart: unless-stopped
+              ports:
+                - "{{ container_port }}:80"
+              environment:
+                - MODE=standalone
+        dest: "{{ compose_file }}"
+        mode: "0644"
+
+    # --- 2. Pull image ---
+    - name: Pull OpenSpeedTest image
+      ansible.builtin.command:
+        cmd: docker pull {{ container_image }}
+      register: image_pull
+      changed_when: image_pull.rc == 0
+
+    # --- 3. Remove existing container (idempotent) ---
+    - name: Remove existing container
+      ansible.builtin.command:
+        cmd: docker rm -f {{ container_name }}
+      register: container_rm
+      changed_when: container_rm.rc == 0
+      failed_when: false
+
+    # --- 4. Deploy via docker compose ---
+    - name: Deploy OpenSpeedTest stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ ct_dir }}"
+        pull: always
+        state: present
+      register: compose_result
+
+    # --- 5. Verify ---
+    - name: Verify container is running
+      ansible.builtin.command:
+        cmd: "docker inspect --format='{{ '{{' }}.State.Running{{ '}}' }}' {{ container_name }}"
+      register: container_status
+      changed_when: false
+
+    - name: Assert container is running
+      ansible.builtin.assert:
+        that:
+          - container_status.stdout == "true"
+        fail_msg: "{{ container_name }} is not running!"
+        success_msg: "{{ container_name }} is running on 192.168.1.13:8080"
+
+    - name: Display container status
+      ansible.builtin.debug:
+        msg: "OpenSpeedTest is running on http://192.168.1.13:8080"

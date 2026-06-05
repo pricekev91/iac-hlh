@@ -1,0 +1,10 @@
+---
+services:
+  openspeedtest:
+    image: openspeedtest/latest
+    container_name: openspeedtest
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - MODE=standalone
