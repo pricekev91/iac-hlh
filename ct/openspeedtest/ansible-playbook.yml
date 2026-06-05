@@ -15,7 +15,7 @@
     compose_file: "{{ ct_dir }}/docker-compose.yml"
     container_name: openspeedtest
     container_image: openspeedtest/latest
-    host_port: "80"
+    host_port: "8080"
     target_ip: "192.168.1.20"
     target_iface: eth0
 
@@ -78,12 +78,12 @@
       register: image_pull
       changed_when: image_pull.rc == 0
 
-    # --- 4. Remove existing container (idempotent) ---
-    - name: Remove existing container
-      ansible.builtin.command:
-        cmd: docker rm -f {{ container_name }}
-      register: container_rm
-      changed_when: container_rm.rc == 0
+    # --- 4. Tear down any existing stack (releases port bindings) ---
+    - name: Stop existing stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ ct_dir }}"
+        state: absent
+      register: compose_down
       failed_when: false
 
     # --- 5. Deploy via docker compose ---
