@@ -19,6 +19,28 @@
         state: directory
         mode: "0755"
 
+    # --- Ensure Docker macvlan network exists with correct config ---
+    - name: Remove existing macvlan network if misconfigured
+      community.docker.docker_network:
+        name: hlh_macvlan
+        state: absent
+      register: net_removed
+      ignore_errors: true
+
+    - name: Create Docker macvlan network
+      community.docker.docker_network:
+        name: hlh_macvlan
+        driver: macvlan
+        ipam_options:
+          driver: default
+          config:
+            - subnet: "192.168.1.0/24"
+              gateway: "192.168.1.1"
+        opts:
+          parent: macvlan0
+        state: present
+      register: net_created
+
   tasks:
     # --- 1. Write docker-compose.yml ---
     - name: Write docker-compose.yml
@@ -34,18 +56,12 @@
                 - MODE=standalone
                 - WEB_PORT=80
               networks:
-                macvlan_net:
+                hlh_macvlan:
                   ipv4_address: 192.168.1.20
 
           networks:
-            macvlan_net:
-              driver: macvlan
-              driver_opts:
-                parent: macvlan0
-              ipam:
-                config:
-                  - subnet: "192.168.1.0/24"
-                    gateway: "192.168.1.1"
+            hlh_macvlan:
+              external: true
         dest: "{{ compose_file }}"
         mode: "0644"
 
