@@ -26,14 +26,6 @@
         state: directory
         mode: "0755"
 
-    # --- Sync repo so compose template is always current ---
-    - name: Pull latest repo code
-      ansible.builtin.command:
-        cmd: git pull --rebase
-      args:
-        chdir: "{{ ct_dir | dirname }}"
-      changed_when: false
-
   tasks:
     # --- 1. Add IP alias for container (so port bind works) ---
     - name: Add {{ target_ip }}/{{ ansible_netmask | default('24') }} as alias on {{ target_iface }}
