@@ -77,8 +77,7 @@
         cmd: grep "{{ target_ip }}" "{{ compose_file }}"
       register: compose_verify
       changed_when: false
-      failed_when: compose_verify.rc != 1
-      failed_msg: "compose_file does not contain {{ target_ip }} — write failed"
+      failed_when: compose_verify.rc != 0
 
     # --- 3. Pull image ---
     - name: Pull OpenSpeedTest image
