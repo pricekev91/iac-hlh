@@ -17,6 +17,7 @@
     container_image: openspeedtest/latest
     host_port: "80"
     target_ip: "192.168.1.20"
+    target_iface: eth0
 
   pre_tasks:
     - name: Ensure ct directory exists
@@ -25,15 +26,36 @@
         state: directory
         mode: "0755"
 
+    # --- Sync repo so compose template is always current ---
+    - name: Pull latest repo code
+      ansible.builtin.command:
+        cmd: git pull --rebase
+      args:
+        chdir: "{{ ct_dir | dirname }}"
+      changed_when: false
+
   tasks:
     # --- 1. Add IP alias for container (so port bind works) ---
-    - name: Add 192.168.1.20/24 as alias on eth0
+    - name: Add {{ target_ip }}/{{ ansible_netmask | default('24') }} as alias on {{ target_iface }}
       ansible.builtin.command:
-        cmd: "ip addr add {{ target_ip }}/24 dev eth0 2>/dev/null || true"
-      changed_when: false
+        cmd: "ip addr add {{ target_ip }}/24 dev {{ target_iface }}"
+      register: ip_alias
+      changed_when: "'already exists' not in ip_alias.stderr"
       failed_when: false
 
-    # --- 2. Write docker-compose.yml ---
+    - name: Verify IP alias is active
+      ansible.builtin.command:
+        cmd: "ip addr show {{ target_iface }}"
+      register: ip_check
+      changed_when: false
+
+    - name: Assert target IP exists on interface
+      ansible.builtin.assert:
+        that:
+          - target_ip in ip_check.stdout
+        fail_msg: "{{ target_ip }} not found on {{ target_iface }}. Run: ip addr add {{ target_ip }}/24 dev {{ target_iface }}"
+
+    # --- 2. Write docker-compose.yml with explicit IP binding ---
     - name: Write docker-compose.yml
       ansible.builtin.copy:
         content: |
@@ -49,6 +71,14 @@
                 - MODE=standalone
         dest: "{{ compose_file }}"
         mode: "0644"
+
+    - name: Verify compose file has correct binding
+      ansible.builtin.command:
+        cmd: grep "{{ target_ip }}" "{{ compose_file }}"
+      register: compose_verify
+      changed_when: false
+      failed_when: compose_verify.rc != 1
+      failed_msg: "compose_file does not contain {{ target_ip }} — write failed"
 
     # --- 3. Pull image ---
     - name: Pull OpenSpeedTest image
