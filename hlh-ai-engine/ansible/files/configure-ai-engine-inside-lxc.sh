@@ -225,47 +225,77 @@ is_mtp_model() {
 # Rewrites the full ExecStart block in the systemd unit with all chosen params.
 # Using awk avoids fragile multi-sed chaining and handles add/remove of MTP flags.
 rewrite_execstart() {
-  local model="$1" ctx="$2" kv="$3" mtp="$4"
-  local tmp_file
-  tmp_file="$(mktemp)"
+  # Using awk avoids fragile multi-sed chaining and handles add/remove of MTP flags.
+  rewrite_execstart() {
+    local model="$1" ctx="$2" kv="$3" mtp="$4"
+    # ─── Enhanced ExecStart rewrite with validation ──────────────────────────────────────────────────
+    # Rewrites the full ExecStart block in the systemd unit with all chosen params.
+    # Using awk avoids fragile multi-sed chaining and handles add/remove of MTP flags.
+    rewrite_execstart() {
+      local model="$1" ctx="$2" kv="$3" mtp="$4"
+      local tmp_file
+      tmp_file="$(mktemp)"
+  
+      # Create backup of service file
+      if [ -f "$SYSTEMD_SERVICE" ]; then
+        cp "$SYSTEMD_SERVICE" "${SYSTEMD_SERVICE}.backup.$(date +%s)"
+      fi
 
-  awk -v model="$model" -v ctx="$ctx" -v kv="$kv" -v mtp="$mtp" -v mtpn="$MTP_DRAFT_N_MAX" '
-    BEGIN { in_block=0; done=0 }
-    /^ExecStart=.*llama-server/ {
-      done=1
-      print "ExecStart=/opt/llama.cpp/build/bin/llama-server \\"
-      print "  --model " model " \\"
-      print "  --host 0.0.0.0 --port 80 \\"
-      print "  --ctx-size " ctx " \\"
-      print "  -ngl 48 \\"
-      print "  --batch-size 128 \\"
-      print "  --parallel 1 \\"
-      print "  --cache-type-k " kv " \\"
-      if (mtp == "1") {
-        print "  --cache-type-v " kv " \\"
-        print "  --spec-type draft-mtp \\"
-        print "  --spec-draft-n-max " mtpn " \\"
-        print "  --parallel 1"
-      } else {
-        print "  --cache-type-v " kv
+      awk -v model="$model" -v ctx="$ctx" -v kv="$kv" -v mtp="$mtp" -v mtpn="$MTP_DRAFT_N_MAX" '
+        BEGIN { in_block=0; done=0 }
+        /^ExecStart=.*llama-server/ {
+          done=1
+          print "ExecStart=/opt/llama.cpp/build/bin/llama-server \\\\"
+          print "  --model " model " \\\\"
+          print "  --host 0.0.0.0 --port 80 \\\\"
+          print "  --ctx-size " ctx " \\\\"
+          print "  -ngl 48 \\\\"
+          print "  --batch-size 128 \\\\"
+          print "  --parallel 1 \\\\"
+          print "  --cache-type-k " kv " \\\\"
+          if (mtp == "1") {
+            print "  --cache-type-v " kv " \\\\"
+            print "  --spec-type draft-mtp \\\\"
+            print "  --spec-draft-n-max " mtpn " \\\\"
+            print "  --parallel 1"
+          } else {
+            print "  --cache-type-v " kv
+          }
+          in_block=1
+          next
+        }
+        in_block {
+          if (/^Restart=/) { in_block=0; print }
+          next
+        }
+        { print }
+        END { if (!done) exit 42 }
+      ' "$SYSTEMD_SERVICE" > "$tmp_file" || {
+        rm -f "$tmp_file"
+        echo "ERROR: Failed to rewrite ExecStart in $SYSTEMD_SERVICE" >&2
+        echo "Service file may be corrupted or missing" >&2
+        exit 1
       }
-      in_block=1
-      next
+  
+      # Validate that we actually modified the file
+      if [ -f "$tmp_file" ]; then
+        mv "$tmp_file" "$SYSTEMD_SERVICE"
+        echo "INFO: Successfully updated service configuration"
+      else
+        echo "ERROR: Failed to create new service file" >&2
+        exit 1
+      fi
     }
-    in_block {
-      if (/^Restart=/) { in_block=0; print }
-      next
-    }
-    { print }
-    END { if (!done) exit 42 }
-  ' "$SYSTEMD_SERVICE" > "$tmp_file" || {
-    rm -f "$tmp_file"
-    echo "ERROR: ExecStart block not found in $SYSTEMD_SERVICE"
-    return 1
+    if [ -f "$tmp_file" ]; then
+      mv "$tmp_file" "$SYSTEMD_SERVICE"
+      echo "INFO: Successfully updated service configuration"
+    else
+      echo "ERROR: Failed to create new service file"
+      return 1
+    fi
   }
-  mv "$tmp_file" "$SYSTEMD_SERVICE"
-}
 
+  # ─── Banner ────────────────────────────────────────────────────────────────────
 # ─── Banner ────────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════╗"
