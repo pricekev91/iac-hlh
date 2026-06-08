@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # configure-ai-engine-inside-lxc.sh
-# Version: 0.8.1
+# Version: 0.8.2
 # Description: Bootstrap llama.cpp AI engine on Ubuntu 24.04 LXC with ROCm passthrough
 # Target GPU: AMD Radeon 890M (gfx1150/Strix Halo) on Proxmox 9.x privileged LXC
 # Requirements: Run as root inside privileged LXC with GPU passthrough and /srv/ai/models bind mount
@@ -20,13 +20,19 @@
 #            ExecStart rewritten atomically via awk on every switch (no sed fragility)
 #   0.8.1 - Reuse existing .gguf on mounted /srv/ai/models during bootstrap
 #            Download default model only when model directory is empty
+#   0.8.2 - Fixed triple-nested rewrite_execstart bug in switch-model.sh (was never callable)
+#            Updated default model to Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+#            Updated PREFERRED_MODELS list to include Qwen3-Coder model
+#            switch-model.sh now copied to /srv/ai/models/ to keep both copies in sync
+#            Added startup wait loop + web UI URL confirmation after model switch
+#            switch-model.sh bumped to v1.4.1
 
 set -euo pipefail
 
 # --- CONFIGURABLE ---
 MODEL_DIR="/srv/ai/models"
-DEFAULT_MODEL_URL="https://huggingface.co/bartowski/Qwen_Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf"
-DEFAULT_MODEL_FILE="Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf"
+DEFAULT_MODEL_URL="https://huggingface.co/bartowski/Qwen2.5-Coder-32B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+DEFAULT_MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
 LLAMA_CPP_REPO="https://github.com/ggerganov/llama.cpp.git"
 LLAMA_CPP_DIR="/opt/llama.cpp"
 SERVICE_NAME="ai-engine"
@@ -127,23 +133,26 @@ echo "[3/7] Setting up model directory..."
 mkdir -p "$MODEL_DIR"
 cd "$MODEL_DIR"
 
-if [ -f "$DEFAULT_MODEL_FILE" ]; then
+ACTIVE_MODEL_FILE=""
+
+if [ -f "${MODEL_DIR}/${DEFAULT_MODEL_FILE}" ]; then
   ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
   echo "Default model already present: $ACTIVE_MODEL_FILE"
 else
   PREFERRED_MODELS=(
+    "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
     "Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf"
     "Qwen_Qwen3-Coder-Next-Q4_K_M.gguf"
   )
   for MODEL_CANDIDATE in "${PREFERRED_MODELS[@]}"; do
-    if [ -f "$MODEL_DIR/$MODEL_CANDIDATE" ]; then
+    if [ -f "${MODEL_DIR}/${MODEL_CANDIDATE}" ]; then
       ACTIVE_MODEL_FILE="$MODEL_CANDIDATE"
       echo "Using preferred existing model from mounted storage: $ACTIVE_MODEL_FILE"
       break
     fi
   done
 
-  if [ -z "${ACTIVE_MODEL_FILE:-}" ]; then
+  if [ -z "${ACTIVE_MODEL_FILE}" ]; then
     mapfile -t EXISTING_MODELS < <(find "$MODEL_DIR" -maxdepth 1 -type f -name '*.gguf' -printf '%f\n' | sort)
     if [ "${#EXISTING_MODELS[@]}" -gt 0 ]; then
       ACTIVE_MODEL_FILE="${EXISTING_MODELS[0]}"
@@ -151,7 +160,7 @@ else
     else
       ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
       echo "No existing models found; downloading default model: $ACTIVE_MODEL_FILE"
-      wget -O "$ACTIVE_MODEL_FILE" "$DEFAULT_MODEL_URL"
+      wget -O "${MODEL_DIR}/${ACTIVE_MODEL_FILE}" "$DEFAULT_MODEL_URL"
     fi
   fi
 fi
@@ -193,7 +202,7 @@ echo "[5/7] Creating interactive model switcher: $SWITCH_SCRIPT..."
 cat > "$SWITCH_SCRIPT" << 'EOS'
 #!/usr/bin/env bash
 # switch-model.sh
-# Version: 1.4.0
+# Version: 1.4.1
 # Description: Interactive model switcher for llama.cpp ai-engine service
 # Supports: model selection, ctx-size, KV cache quantization, MTP auto-detect
 # Changelog:
@@ -207,7 +216,9 @@ cat > "$SWITCH_SCRIPT" << 'EOS'
 #            Replaced fragile sed patching with atomic awk ExecStart rewrite
 #            Model list annotates MTP entries with [MTP] tag
 #            Banner shows current MTP mode
-#   1.4.2 - Remove turboquant menu option until llama.cpp supports it in main
+#   1.4.0 - Remove turboquant menu option until llama.cpp supports it in main
+#   1.4.1 - Fixed triple-nested rewrite_execstart bug (function was never callable)
+#            Added startup wait loop and web UI URL confirmation after switch
 
 set -euo pipefail
 
@@ -225,77 +236,52 @@ is_mtp_model() {
 # Rewrites the full ExecStart block in the systemd unit with all chosen params.
 # Using awk avoids fragile multi-sed chaining and handles add/remove of MTP flags.
 rewrite_execstart() {
-  # Using awk avoids fragile multi-sed chaining and handles add/remove of MTP flags.
-  rewrite_execstart() {
-    local model="$1" ctx="$2" kv="$3" mtp="$4"
-    # ─── Enhanced ExecStart rewrite with validation ──────────────────────────────────────────────────
-    # Rewrites the full ExecStart block in the systemd unit with all chosen params.
-    # Using awk avoids fragile multi-sed chaining and handles add/remove of MTP flags.
-    rewrite_execstart() {
-      local model="$1" ctx="$2" kv="$3" mtp="$4"
-      local tmp_file
-      tmp_file="$(mktemp)"
-  
-      # Create backup of service file
-      if [ -f "$SYSTEMD_SERVICE" ]; then
-        cp "$SYSTEMD_SERVICE" "${SYSTEMD_SERVICE}.backup.$(date +%s)"
-      fi
+  local model="$1" ctx="$2" kv="$3" mtp="$4"
+  local tmp_file
+  tmp_file="$(mktemp)"
 
-      awk -v model="$model" -v ctx="$ctx" -v kv="$kv" -v mtp="$mtp" -v mtpn="$MTP_DRAFT_N_MAX" '
-        BEGIN { in_block=0; done=0 }
-        /^ExecStart=.*llama-server/ {
-          done=1
-          print "ExecStart=/opt/llama.cpp/build/bin/llama-server \\\\"
-          print "  --model " model " \\\\"
-          print "  --host 0.0.0.0 --port 80 \\\\"
-          print "  --ctx-size " ctx " \\\\"
-          print "  -ngl 48 \\\\"
-          print "  --batch-size 128 \\\\"
-          print "  --parallel 1 \\\\"
-          print "  --cache-type-k " kv " \\\\"
-          if (mtp == "1") {
-            print "  --cache-type-v " kv " \\\\"
-            print "  --spec-type draft-mtp \\\\"
-            print "  --spec-draft-n-max " mtpn " \\\\"
-            print "  --parallel 1"
-          } else {
-            print "  --cache-type-v " kv
-          }
-          in_block=1
-          next
-        }
-        in_block {
-          if (/^Restart=/) { in_block=0; print }
-          next
-        }
-        { print }
-        END { if (!done) exit 42 }
-      ' "$SYSTEMD_SERVICE" > "$tmp_file" || {
-        rm -f "$tmp_file"
-        echo "ERROR: Failed to rewrite ExecStart in $SYSTEMD_SERVICE" >&2
-        echo "Service file may be corrupted or missing" >&2
-        exit 1
+  cp "$SYSTEMD_SERVICE" "${SYSTEMD_SERVICE}.backup.$(date +%s)"
+
+  awk -v model="$model" -v ctx="$ctx" -v kv="$kv" -v mtp="$mtp" -v mtpn="$MTP_DRAFT_N_MAX" '
+    BEGIN { in_block=0; done=0 }
+    /^ExecStart=.*llama-server/ {
+      done=1
+      print "ExecStart=/opt/llama.cpp/build/bin/llama-server \\"
+      print "  --model " model " \\"
+      print "  --host 0.0.0.0 --port 80 \\"
+      print "  --ctx-size " ctx " \\"
+      print "  -ngl 48 \\"
+      print "  --batch-size 128 \\"
+      print "  --parallel 1 \\"
+      print "  --cache-type-k " kv " \\"
+      if (mtp == "1") {
+        print "  --cache-type-v " kv " \\"
+        print "  --spec-type draft-mtp \\"
+        print "  --spec-draft-n-max " mtpn " \\"
+        print "  --parallel 1"
+      } else {
+        print "  --cache-type-v " kv
       }
-  
-      # Validate that we actually modified the file
-      if [ -f "$tmp_file" ]; then
-        mv "$tmp_file" "$SYSTEMD_SERVICE"
-        echo "INFO: Successfully updated service configuration"
-      else
-        echo "ERROR: Failed to create new service file" >&2
-        exit 1
-      fi
+      in_block=1
+      next
     }
-    if [ -f "$tmp_file" ]; then
-      mv "$tmp_file" "$SYSTEMD_SERVICE"
-      echo "INFO: Successfully updated service configuration"
-    else
-      echo "ERROR: Failed to create new service file"
-      return 1
-    fi
+    in_block {
+      if (/^Restart=/) { in_block=0; print }
+      next
+    }
+    { print }
+    END { if (!done) exit 42 }
+  ' "$SYSTEMD_SERVICE" > "$tmp_file" || {
+    rm -f "$tmp_file"
+    echo "ERROR: Failed to rewrite ExecStart in $SYSTEMD_SERVICE" >&2
+    echo "Service file may be corrupted or missing" >&2
+    exit 1
   }
 
-  # ─── Banner ────────────────────────────────────────────────────────────────────
+  mv "$tmp_file" "$SYSTEMD_SERVICE"
+  echo "INFO: Successfully updated service configuration"
+}
+
 # ─── Banner ────────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════╗"
@@ -321,10 +307,10 @@ echo "╚═══════════════════════�
 echo ""
 
 # ─── Current state ─────────────────────────────────────────────────────────────
-CUR_MODEL=$(grep -- '--model '        "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--model")        print $(i+1)}')
-CUR_CTX=$(  grep -- '--ctx-size '     "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--ctx-size")     print $(i+1)}') || CUR_CTX="(not set)"
-CUR_KV_K=$( grep -- '--cache-type-k ' "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--cache-type-k") print $(i+1)}') || CUR_KV_K="(not set)"
-CUR_KV_V=$( grep -- '--cache-type-v ' "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--cache-type-v") print $(i+1)}') || CUR_KV_V="(not set)"
+CUR_MODEL=$(grep -- '--model '         "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--model")         print $(i+1)}')
+CUR_CTX=$(  grep -- '--ctx-size '      "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--ctx-size")      print $(i+1)}') || CUR_CTX="(not set)"
+CUR_KV_K=$( grep -- '--cache-type-k '  "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--cache-type-k")  print $(i+1)}') || CUR_KV_K="(not set)"
+CUR_KV_V=$( grep -- '--cache-type-v '  "$SYSTEMD_SERVICE" | awk '{for(i=1;i<=NF;i++) if ($i=="--cache-type-v")  print $(i+1)}') || CUR_KV_V="(not set)"
 if is_mtp_model "${CUR_MODEL:-}"; then CUR_MTP="yes"; else CUR_MTP="no"; fi
 
 echo "  Model directory : $MODEL_DIR"
@@ -422,29 +408,47 @@ if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
   exit 0
 fi
 
-# ─── Rewrite ExecStart block ───────────────────────────────────────────────────
+# ─── Rewrite ExecStart & restart ──────────────────────────────────────────────
 if is_mtp_model "$NEW_MODEL"; then
   rewrite_execstart "$NEW_MODEL" "$NEW_CTX" "$NEW_KV" "1"
 else
   rewrite_execstart "$NEW_MODEL" "$NEW_CTX" "$NEW_KV" "0"
 fi
 
-# ─── Reload & restart ──────────────────────────────────────────────────────────
 systemctl daemon-reload
 systemctl restart "$SERVICE"
 
-# ─── Confirm active settings ───────────────────────────────────────────────────
+# ─── Wait for service to come up ──────────────────────────────────────────────
 echo ""
-echo "  [✓] Switched to : $NEW_MODEL"
-echo "  [✓] ctx-size    : $NEW_CTX"
-echo "  [✓] KV cache    : $NEW_KV (K and V)"
-echo "  [✓] MTP mode    : $NEW_MTP"
-echo "  [✓] Service     : $SERVICE restarted"
-echo ""
-echo "  Verify VRAM usage with: rocm-smi"
-echo "  Watch logs with       : journalctl -u $SERVICE -f"
+echo "  Waiting for $SERVICE to start..."
+for i in {1..15}; do
+  if systemctl is-active --quiet "$SERVICE"; then
+    break
+  fi
+  sleep 2
+done
+
+if systemctl is-active --quiet "$SERVICE"; then
+  echo "  [✓] Switched to : $NEW_MODEL"
+  echo "  [✓] ctx-size    : $NEW_CTX"
+  echo "  [✓] KV cache    : $NEW_KV (K and V)"
+  echo "  [✓] MTP mode    : $NEW_MTP"
+  echo "  [✓] Service     : $SERVICE running"
+  echo ""
+  echo "  Web UI ready at       : http://$(hostname -I | awk '{print $1}'):80"
+  echo "  Verify VRAM usage with: rocm-smi"
+  echo "  Watch logs with       : journalctl -u $SERVICE -f"
+else
+  echo "  [✗] WARNING: $SERVICE did not start cleanly after switch!"
+  echo "  Check logs with: journalctl -u $SERVICE -f"
+  exit 1
+fi
 EOS
 chmod +x "$SWITCH_SCRIPT"
+
+# Keep /srv/ai/models/switch-model.sh in sync (both locations exist on this host)
+cp "$SWITCH_SCRIPT" "${MODEL_DIR}/switch-model.sh"
+chmod +x "${MODEL_DIR}/switch-model.sh"
 
 # --- 6. ENABLE & START SERVICE ---
 echo "[6/7] Enabling and starting $SERVICE_NAME..."
@@ -463,7 +467,7 @@ echo ""
 echo "[Service status]"
 systemctl status "$SERVICE_NAME" --no-pager
 echo ""
-echo "[Bootstrap complete - v0.7.1]"
+echo "[Bootstrap complete - v0.8.2]"
 echo "  Native llama.cpp web UI : http://<container-ip>:80"
 echo "  Switch models with      : switch-model.sh"
 echo "  GPU device              : gfx1150 (AMD Radeon 890M)"
