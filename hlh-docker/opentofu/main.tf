@@ -13,13 +13,6 @@ provider "proxmox" {
   username  = var.pm_api_token == "" ? var.pm_username : null
   password  = var.pm_api_token == "" ? var.pm_password : null
   insecure  = true
-
-  # SSH ticket auth — uses local SSH key to get an API ticket from Proxmox.
-  ssh {
-    agent     = true
-    username  = "root"
-    private_key = var.pm_ssh_identity
-  }
 }
 
 # --- HLH-Docker LXC (vmid 102) ---

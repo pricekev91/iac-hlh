@@ -41,6 +41,10 @@ run_opentofu_stage() {
     export TF_VAR_pm_password="${TF_VAR_pm_password:-}"
     export TF_VAR_pm_ssh_identity="${TF_VAR_pm_ssh_identity:-/root/.ssh/id_ed25519}"
 
+    # BPG provider reads SSH key content from PROXMOX_VE_SSH_PRIVATE_KEY env var.
+    # Export it so the provider can get an API ticket via SSH ticket auth.
+    export PROXMOX_VE_SSH_PRIVATE_KEY="$(cat "${TF_VAR_pm_ssh_identity}")"
+
     # Determine target host and skip SSH check if we're already on it.
     TARGET_HOST="${TF_VAR_pm_endpoint#*://}"
     TARGET_HOST="${TARGET_HOST%%:*}"
