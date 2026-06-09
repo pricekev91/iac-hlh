@@ -41,7 +41,7 @@ run_opentofu_stage() {
     export TF_VAR_pm_password="${TF_VAR_pm_password:-}"
 
     # Determine target host and skip SSH check if we're already on it.
-    TARGET_HOST="${TF_VAR_PM_ENDPOINT#*://}"
+    TARGET_HOST="${TF_VAR_pm_endpoint#*://}"
     TARGET_HOST="${TARGET_HOST%%:*}"
     TARGET_HOSTNAME="${TF_VAR_TARGET_NODE:-prox01}"
     THIS_HOSTNAME=$(hostname -s 2>/dev/null || true)
