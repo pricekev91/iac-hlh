@@ -89,12 +89,12 @@ else
 fi
 
 # Install community.docker collection
-$ANSIBLE_CMD --version >/dev/null 2>&1 || true
-if $ANSIBLE_CMD galaxy collection list community.docker 2>/dev/null | grep -q community.docker; then
+VENV_GALAXY="/home/pricekev/git/iac-hlh/.tools/ansible-venv/bin/ansible-galaxy"
+if "$VENV_GALAXY" collection list community.docker 2>/dev/null | grep -q community.docker; then
     echo "=== community.docker collection already installed ==="
 else
     echo "=== installing community.docker collection ==="
-    $ANSIBLE_CMD galaxy collection install community.docker
+    "$VENV_GALAXY" collection install community.docker
 fi
 
 if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
