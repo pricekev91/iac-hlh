@@ -40,16 +40,21 @@ run_opentofu_stage() {
     export TF_VAR_pm_api_token="${TF_VAR_pm_api_token:-}"
     export TF_VAR_pm_password="${TF_VAR_pm_password:-}"
 
-    # Use key-based auth to prox01 (no password prompt).
-    # The bpg/proxmox provider accepts username+password or api_token.
-    # For key-based, we use the SSH session to prox01 to run `pct` commands
-    # if the provider password auth fails. For now, check if we can SSH to prox01.
-    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 root@192.168.1.10 "echo OK" >/dev/null 2>&1; then
-        echo "ERROR: Cannot SSH to prox01 (192.168.1.10) with key auth." >&2
-        echo "Ensure ~/.ssh/id_ed25519 is configured for root@192.168.1.10." >&2
+    # Determine target host and skip SSH check if we're already on it.
+    TARGET_HOST="${TF_VAR_PM_ENDPOINT#*://}"
+    TARGET_HOST="${TARGET_HOST%%:*}"
+    TARGET_HOSTNAME="${TF_VAR_TARGET_NODE:-prox01}"
+    THIS_HOSTNAME=$(hostname -s 2>/dev/null || true)
+
+    if [[ "$TARGET_HOSTNAME" == "$THIS_HOSTNAME" || "$TARGET_HOST" == "127.0.0.1" ]]; then
+        echo "Already running on target host ($THIS_HOSTNAME), skipping SSH check."
+    elif ! ssh -o BatchMode=yes -o ConnectTimeout=5 root@${TARGET_HOST} "echo OK" >/dev/null 2>&1; then
+        echo "ERROR: Cannot SSH to prox01 (${TARGET_HOST}) with key auth." >&2
+        echo "Ensure ~/.ssh/id_ed25519 is configured for root@${TARGET_HOST}." >&2
         exit 1
+    else
+        echo "Proxmox SSH key auth verified."
     fi
-    echo "Proxmox SSH key auth verified."
 
     export TF_VAR_target_node="${TF_VAR_target_node:-prox01}"
     export TF_VAR_ostemplate="${TF_VAR_ostemplate:-local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst}"

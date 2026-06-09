@@ -28,7 +28,6 @@ resource "proxmox_virtual_environment_container" "hlh_docker" {
 
   features {
     nesting = true
-    keyctl  = true
   }
 
   initialization {
