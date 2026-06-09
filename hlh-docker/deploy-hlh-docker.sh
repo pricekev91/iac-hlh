@@ -39,6 +39,7 @@ run_opentofu_stage() {
     export TF_VAR_pm_username="${TF_VAR_pm_username:-root@pam}"
     export TF_VAR_pm_api_token="${TF_VAR_pm_api_token:-}"
     export TF_VAR_pm_password="${TF_VAR_pm_password:-}"
+    export TF_VAR_pm_ssh_identity="${TF_VAR_pm_ssh_identity:-/root/.ssh/id_ed25519}"
 
     # Determine target host and skip SSH check if we're already on it.
     TARGET_HOST="${TF_VAR_pm_endpoint#*://}"

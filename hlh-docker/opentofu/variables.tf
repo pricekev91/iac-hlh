@@ -24,6 +24,12 @@ variable "pm_password" {
   sensitive   = true
 }
 
+variable "pm_ssh_identity" {
+  description = "Path to SSH private key for Proxmox API ticket auth"
+  type        = string
+  default     = "/root/.ssh/id_ed25519"
+}
+
 variable "target_node" {
   description = "Proxmox node name"
   type        = string
