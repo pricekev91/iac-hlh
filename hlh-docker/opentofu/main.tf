@@ -70,6 +70,20 @@ resource "proxmox_virtual_environment_container" "hlh_docker" {
     template_file_id = var.ostemplate
     type             = "ubuntu"
   }
+
+  # Persistent ZFS bind-mounts — data survives LXC destroy/recreate.
+  # Datasets are mounted via /mnt/RaidZ1-6TB on the Proxmox host.
+  mount_point {
+    volume = "/mnt/RaidZ1-6TB/hlh-docker/docker-data"
+    path   = "/var/lib/docker"
+    shared = true
+  }
+
+  mount_point {
+    volume = "/mnt/RaidZ1-6TB/hlh-docker/dockhand-data"
+    path   = "/srv/dockhand/data"
+    shared = true
+  }
 }
 
 output "lxc_vmid" {

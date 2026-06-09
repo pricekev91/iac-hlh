@@ -15,5 +15,4 @@ Active items in progress. These are the current focus areas.
 ## This Week
 
 - [ ] Run deploy-hlh-docker.sh --plan against prox01
-- [ ] Configure OpenSpeedTest as first app on the Docker host
 - [ ] Plan Uptime Kuma deployment (service stack in iac-hlh)

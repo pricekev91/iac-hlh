@@ -13,7 +13,6 @@ in the codebase.
 
 ## Docker Services
 
-- Deploy OpenSpeedTest as first app on this host (per ADR-001 next steps).
 - Deploy Uptime Kuma as monitoring service (mentioned in iac-hlh services/).
 - Add Docker Compose stack for service grouping.
 - Add Docker network creation for per-app segmentation.

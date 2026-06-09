@@ -8,22 +8,24 @@ PLAYBOOK="${ANSIBLE_DIR}/playbooks/hlh-docker.yml"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 HOST_OVERRIDE=""
 OFFLINE=0
-USE_SSH_PASSWORD=1
-SSH_PASSWORD=""
+VMID_PASSWORD=""
 LXC_VMID="${LXC_VMID:-102}"
 
 usage() {
     cat <<'EOF'
 Usage:
-    ./configure-hlh-docker.sh [--host <ip>] [--offline] [--ask-pass|--use-key] [--vmid <id>]
+    ./configure-hlh-docker.sh [--host <ip>] [--offline] [--vmid-password <pwd>] [--vmid <id>]
 
 Options:
-  --host <ip>  Override target host defined in inventory.
-  --offline    Skip online dependency fetches where possible.
-    --ask-pass   Use SSH password authentication (default).
-    --use-key    Use SSH key authentication with SSH_KEY path.
-    --vmid <id>  LXC VMID for password/sshd bootstrap via pct (default: 102).
-  -h, --help   Show this help.
+  --host <ip>         Override target host defined in inventory.
+  --offline           Skip online dependency fetches where possible.
+  --vmid-password <p> Password for initial LXC bootstrap (one-time use, not stored).
+  --vmid <id>         LXC VMID for password/sshd bootstrap via pct (default: 102).
+  -h, --help          Show this help.
+
+Authentication defaults to SSH key-based. Password is only used for the
+initial LXC bootstrap (set root password + deploy SSH key), then key auth is used
+for all Ansible operations. No passwords are passed on the Ansible command line.
 EOF
 }
 
@@ -37,11 +39,10 @@ while [[ $# -gt 0 ]]; do
         --offline)
             OFFLINE=1
             ;;
-        --ask-pass|--password)
-            USE_SSH_PASSWORD=1
-            ;;
-        --use-key)
-            USE_SSH_PASSWORD=0
+        --vmid-password)
+            [[ $# -ge 2 ]] || { echo "ERROR: --vmid-password requires a value" >&2; exit 1; }
+            VMID_PASSWORD="$2"
+            shift
             ;;
         --vmid)
             [[ $# -ge 2 ]] || { echo "ERROR: --vmid requires a value" >&2; exit 1; }
@@ -87,15 +88,6 @@ if [[ "$OFFLINE" -eq 0 && -f requirements.yml ]]; then
     ansible-galaxy collection install -r requirements.yml
 fi
 
-if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
-    [[ -f "$SSH_KEY" ]] || { echo "ERROR: SSH key not found at $SSH_KEY (or run with --ask-pass)." >&2; exit 1; }
-fi
-
-if [[ "$USE_SSH_PASSWORD" -eq 1 ]] && ! command -v sshpass >/dev/null 2>&1; then
-    echo "=== sshpass not found, installing via apt ==="
-    apt-get install -y sshpass
-fi
-
 # LXC rebuilds often change SSH host keys. Refresh known_hosts automatically.
 mkdir -p "$HOME/.ssh"
 touch "$HOME/.ssh/known_hosts"
@@ -104,44 +96,78 @@ if [[ "$OFFLINE" -eq 0 ]]; then
     ssh-keyscan -H "$TARGET_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
 fi
 
-if [[ "$USE_SSH_PASSWORD" -eq 1 ]]; then
-    if [[ -z "$SSH_PASSWORD" ]]; then
-        read -rsp "LXC root SSH password: " SSH_PASSWORD
+# --- Bootstrap phase: key auth first, password fallback only if needed ---
+KEY_PUB="${SSH_KEY}.pub"
+
+# Helper: test SSH key connectivity
+test_key_auth() {
+    ssh -o BatchMode=yes -o ConnectTimeout=5 \
+        -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+        -o StrictHostKeyChecking=accept-new \
+        -i "$SSH_KEY" "${TARGET_USER}@${TARGET_HOST}" true >/dev/null 2>&1
+}
+
+# Try key auth first
+if ! test_key_auth; then
+    echo "=== SSH key auth failed; bootstrapping with password ==="
+    SSH_PASSWORD=""
+    if [[ -n "$VMID_PASSWORD" ]]; then
+        SSH_PASSWORD="$VMID_PASSWORD"
+        echo "Using bootstrap password from argument."
+    else
+        read -rsp "LXC root SSH password (for initial bootstrap only): " SSH_PASSWORD
         echo
+        if [[ -z "$SSH_PASSWORD" ]]; then
+            echo "ERROR: Key auth failed and no bootstrap password provided. Aborting." >&2
+            exit 1
+        fi
     fi
 
-    # On Proxmox host, bootstrap root password + SSH policy directly in container.
+    # Bootstrap via pct exec: set root password, deploy public key, enable SSH
     if command -v pct >/dev/null 2>&1 && pct status "$LXC_VMID" >/dev/null 2>&1; then
-        printf 'root:%s\n' "$SSH_PASSWORD" | pct exec "$LXC_VMID" -- chpasswd || true
-        pct exec "$LXC_VMID" -- bash -lc "
-            if [ -f /etc/ssh/sshd_config ]; then
-                sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-                sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-            fi
-            systemctl restart ssh || systemctl restart sshd || service ssh restart || true
-        " || true
+        echo "=== Bootstrapping LXC ${LXC_VMID} ==="
+
+        # Set root password inside the LXC
+        printf 'root:%s\n' "$SSH_PASSWORD" | pct exec "$LXC_VMID" -- chpasswd
+
+        # Deploy SSH key and configure SSH
+        if [[ -f "$KEY_PUB" ]]; then
+            # Deploy SSH key into LXC via pct push (rootfs storage)
+            pct push "$LXC_VMID" "$KEY_PUB" "rootfs:/root/.ssh/authorized_keys"
+            pct exec "$LXC_VMID" -- bash -lc "
+                set -euo pipefail
+                if [ -f /etc/ssh/sshd_config ]; then
+                    sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+                    sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+                fi
+                mkdir -p /root/.ssh
+                chmod 700 /root/.ssh
+                chmod 600 /root/.ssh/authorized_keys
+                chown -R root:root /root/.ssh
+                systemctl restart ssh || systemctl restart sshd || service ssh restart || true
+            "
+        else
+            echo "WARNING: ${KEY_PUB} not found; SSH key cannot be deployed." >&2
+            # Just set password and restart SSH
+            pct exec "$LXC_VMID" -- bash -lc "
+                if [ -f /etc/ssh/sshd_config ]; then
+                    sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+                    sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+                fi
+                systemctl restart ssh || systemctl restart sshd || service ssh restart || true
+            "
+        fi
     fi
 fi
 
-# If key auth is selected, verify it actually works. If not, fall back to password prompt.
-if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
-    SSH_TEST_OPTS=(
-        -o BatchMode=yes
-        -o ConnectTimeout=5
-        -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-        -o StrictHostKeyChecking=accept-new
-    )
-    if ! ssh "${SSH_TEST_OPTS[@]}" -i "$SSH_KEY" "${TARGET_USER}@${TARGET_HOST}" true >/dev/null 2>&1; then
-        echo "=== SSH key auth failed for ${TARGET_USER}@${TARGET_HOST}; switching to password prompt mode ==="
-        USE_SSH_PASSWORD=1
-    fi
+# Re-verify key auth works now
+if ! test_key_auth; then
+    echo "ERROR: SSH key auth still not working after bootstrap. Check the LXC manually." >&2
+    exit 1
 fi
+echo "SSH key auth verified. Running Ansible with key-based auth."
 
-if [[ "$USE_SSH_PASSWORD" -eq 1 ]] && ! command -v sshpass >/dev/null 2>&1; then
-    echo "=== sshpass not found, installing via apt ==="
-    apt-get install -y sshpass
-fi
-
+# Prepare Ansible — key-based auth only, NO password on command line
 HLH_OFFLINE_BOOL="false"
 [[ "$OFFLINE" -eq 1 ]] && HLH_OFFLINE_BOOL="true"
 EXTRA_VARS_JSON="{\"hlh_offline\": ${HLH_OFFLINE_BOOL}}"
@@ -157,12 +183,8 @@ ANSIBLE_ARGS=(
     "$PLAYBOOK"
     --ssh-common-args "-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=accept-new"
     -e "$EXTRA_VARS_JSON"
+    --private-key "$SSH_KEY"
 )
 
-if [[ "$USE_SSH_PASSWORD" -eq 1 ]]; then
-    ANSIBLE_ARGS+=(-e "ansible_password=${SSH_PASSWORD}")
-else
-    ANSIBLE_ARGS+=(--private-key "$SSH_KEY")
-fi
-
+echo "=== Running Ansible playbook ==="
 ansible-playbook "${ANSIBLE_ARGS[@]}"
