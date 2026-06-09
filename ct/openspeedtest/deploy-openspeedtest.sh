@@ -62,16 +62,39 @@ TARGET_USER="${TARGET_USER:-root}"
 
 cd "$SCRIPT_DIR"
 
-# Ensure ansible is available
-if ! command -v ansible-playbook >/dev/null 2>&1; then
-    echo "=== ansible not found, installing via apt ==="
-    apt-get install -y ansible
+# Ensure ansible is available (check venv first, then system)
+ANSIBLE_CMD=""
+VENV_ANSIBLE="/home/pricekev/git/iac-hlh/.tools/ansible-venv/bin/ansible-playbook"
+if [[ -x "$VENV_ANSIBLE" ]]; then
+    ANSIBLE_CMD="$VENV_ANSIBLE"
+    echo "=== using ansible venv: $VENV_ANSIBLE ==="
+elif command -v ansible-playbook >/dev/null 2>&1; then
+    ANSIBLE_CMD="$(command -v ansible-playbook)"
+    echo "=== using system ansible: $ANSIBLE_CMD ==="
+else
+    echo "=== ansible not found, installing ==="
+    if command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm ansible
+        ANSIBLE_CMD="$(command -v ansible-playbook)"
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y ansible
+        ANSIBLE_CMD="$(command -v ansible-playbook)"
+    elif command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y ansible
+        ANSIBLE_CMD="$(command -v ansible-playbook)"
+    else
+        echo "ERROR: unsupported package manager — install ansible manually" >&2
+        exit 1
+    fi
 fi
 
 # Install community.docker collection
-if ! ansible-galaxy collection list community.docker >/dev/null 2>&1; then
+$ANSIBLE_CMD --version >/dev/null 2>&1 || true
+if $ANSIBLE_CMD galaxy collection list community.docker 2>/dev/null | grep -q community.docker; then
+    echo "=== community.docker collection already installed ==="
+else
     echo "=== installing community.docker collection ==="
-    ansible-galaxy collection install community.docker
+    $ANSIBLE_CMD galaxy collection install community.docker
 fi
 
 if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
@@ -79,8 +102,17 @@ if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
 fi
 
 if [[ "$USE_SSH_PASSWORD" -eq 1 ]] && ! command -v sshpass >/dev/null 2>&1; then
-    echo "=== sshpass not found, installing via apt ==="
-    apt-get install -y sshpass
+    echo "=== sshpass not found, installing ==="
+    if command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm sshpass
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y sshpass
+    elif command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y sshpass
+    else
+        echo "ERROR: install sshpass manually (AUR: yay -S sshpass)" >&2
+        exit 1
+    fi
 fi
 
 # Refresh known_hosts
@@ -115,9 +147,18 @@ if [[ "$USE_SSH_PASSWORD" -eq 0 ]]; then
         USE_SSH_PASSWORD=1
     fi
 fi
-
 if [[ "$USE_SSH_PASSWORD" -eq 1 ]] && ! command -v sshpass >/dev/null 2>&1; then
-    apt-get install -y sshpass
+    echo "=== sshpass not found, installing ==="
+    if command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm sshpass
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y sshpass
+    elif command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y sshpass
+    else
+        echo "ERROR: install sshpass manually (AUR: yay -S sshpass)" >&2
+        exit 1
+    fi
 fi
 
 EXTRA_VARS_JSON="{\"ansible_host\": \"${HOST_OVERRIDE:-$TARGET_HOST}\"}"
@@ -137,5 +178,5 @@ else
 fi
 
 echo "=== Deploying OpenSpeedTest to ${TARGET_HOST} ==="
-ansible-playbook "${ANSIBLE_ARGS[@]}"
+$ANSIBLE_CMD "${ANSIBLE_ARGS[@]}"
 echo "=== Deployment complete ==="
