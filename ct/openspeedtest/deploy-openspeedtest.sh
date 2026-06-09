@@ -6,7 +6,7 @@ PLAYBOOK="${SCRIPT_DIR}/ansible-playbook.yml"
 INVENTORY="${SCRIPT_DIR}/ansible-inventory.yml"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 HOST_OVERRIDE=""
-USE_SSH_PASSWORD=1
+USE_SSH_PASSWORD=0
 SSH_PASSWORD=""
 
 usage() {
@@ -16,8 +16,8 @@ Usage:
 
 Options:
   --host <ip>    Override target host (default: from inventory).
-  --ask-pass     Use SSH password authentication (default).
-  --use-key      Use SSH key authentication with SSH_KEY path.
+  --ask-pass     Use SSH password authentication.
+  --use-key      Use SSH key authentication with SSH_KEY path (default).
   -h, --help     Show this help.
 EOF
 }
