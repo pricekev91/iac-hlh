@@ -25,7 +25,7 @@ variable "pm_password" {
 }
 
 variable "pm_ssh_identity" {
-  description = "Path to SSH private key for Proxmox API ticket auth"
+  description = "Path to SSH private key file for Proxmox API ticket auth (passed as private_key in ssh block)"
   type        = string
   default     = "/root/.ssh/id_ed25519"
 }
