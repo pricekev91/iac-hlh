@@ -25,7 +25,8 @@ Options:
   -h, --help       Show this help.
 
 Required for OpenTofu stage:
-  Proxmox auth via SSH key to prox01 (~/.ssh/id_ed25519).
+  Proxmox auth via username/password or API token.
+  If no TF_VAR_pm_api_token is set, you will be prompted for root@pam password.
 
 Optional:
   TF_VAR_lxc_root_password (if omitted, deploy will prompt in apply mode)
@@ -38,29 +39,27 @@ run_opentofu_stage() {
     export TF_VAR_pm_endpoint="${TF_VAR_pm_endpoint:-https://192.168.1.10:8006/}"
     export TF_VAR_pm_username="${TF_VAR_pm_username:-root@pam}"
     export TF_VAR_pm_api_token="${TF_VAR_pm_api_token:-}"
-    export TF_VAR_pm_password="${TF_VAR_pm_password:-}"
-    export TF_VAR_pm_ssh_identity="${TF_VAR_pm_ssh_identity:-/root/.ssh/id_ed25519}"
 
-    # BPG provider reads SSH key content from PROXMOX_VE_SSH_PRIVATE_KEY env var.
-    # Export it so the provider can get an API ticket via SSH ticket auth.
-    export PROXMOX_VE_SSH_PRIVATE_KEY="$(cat "${TF_VAR_pm_ssh_identity}")"
+    # Prompt for password if no API token is set.
+    if [[ -z "${TF_VAR_pm_api_token}" ]]; then
+        if [[ -z "${TF_VAR_pm_password:-}" ]]; then
+            read -rsp "Proxmox ${TF_VAR_pm_username} password: " TF_VAR_pm_password
+            echo
+        fi
 
-    # Determine target host and skip SSH check if we're already on it.
-    TARGET_HOST="${TF_VAR_pm_endpoint#*://}"
-    TARGET_HOST="${TARGET_HOST%%:*}"
-    TARGET_HOSTNAME="${TF_VAR_TARGET_NODE:-prox01}"
-    THIS_HOSTNAME=$(hostname -s 2>/dev/null || true)
+        # Fail fast on bad API credentials before running tofu plan/apply.
+        AUTH_RESPONSE=$(curl -sk -X POST "${TF_VAR_pm_endpoint}api2/json/access/ticket" \
+            --data-urlencode "username=${TF_VAR_pm_username}" \
+            --data-urlencode "password=${TF_VAR_pm_password}")
 
-    if [[ "$TARGET_HOSTNAME" == "$THIS_HOSTNAME" || "$TARGET_HOST" == "127.0.0.1" ]]; then
-        echo "Already running on target host ($THIS_HOSTNAME), skipping SSH check."
-    elif ! ssh -o BatchMode=yes -o ConnectTimeout=5 root@${TARGET_HOST} "echo OK" >/dev/null 2>&1; then
-        echo "ERROR: Cannot SSH to prox01 (${TARGET_HOST}) with key auth." >&2
-        echo "Ensure ~/.ssh/id_ed25519 is configured for root@${TARGET_HOST}." >&2
-        exit 1
-    else
-        echo "Proxmox SSH key auth verified."
+        if ! printf '%s' "$AUTH_RESPONSE" | grep -q '"ticket"'; then
+            echo "ERROR: Proxmox API authentication failed for ${TF_VAR_pm_username}." >&2
+            echo "Hint: set TF_VAR_pm_api_token to bypass password auth issues." >&2
+            exit 1
+        fi
     fi
 
+    export TF_VAR_pm_password="${TF_VAR_pm_password:-}"
     export TF_VAR_target_node="${TF_VAR_target_node:-prox01}"
     export TF_VAR_ostemplate="${TF_VAR_ostemplate:-local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst}"
     export TF_VAR_cores="${TF_VAR_cores:-4}"
