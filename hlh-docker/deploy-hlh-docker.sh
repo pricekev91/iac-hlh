@@ -128,29 +128,36 @@ run_opentofu_stage() {
     if [[ "$MODE" == "plan" ]]; then
         echo "=== Plan ==="
         if [[ "$OFFLINE" -eq 1 ]]; then
-            tofu plan -refresh=false "${TOFU_ARGS[@]}"
+            tofu plan -refresh=false -out=tfplan "${TOFU_ARGS[@]}"
         else
-            tofu plan "${TOFU_ARGS[@]}"
+            tofu plan -out=tfplan "${TOFU_ARGS[@]}"
         fi
+        echo "Plan saved to tfplan."
         return 0
     fi
 
     echo "=== Plan (pre-apply) ==="
     if [[ "$OFFLINE" -eq 1 ]]; then
-        tofu plan -refresh=false "${TOFU_ARGS[@]}"
+        tofu plan -refresh=false -out=tfplan "${TOFU_ARGS[@]}"
     else
-        tofu plan "${TOFU_ARGS[@]}"
+        tofu plan -out=tfplan "${TOFU_ARGS[@]}"
     fi
 
-    echo ""
-    read -rp "Apply hlh-docker LXC (vmid 102)? [y/N] " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        echo "Aborted."
-        exit 0
+    # Skip the interactive apply prompt when nuke mode is active
+    if [[ "$NUKE" -eq 1 ]]; then
+        echo "=== Applying (nuke mode, skipping confirmation) ==="
+    else
+        echo ""
+        read -rp "Apply hlh-docker LXC (vmid 102)? [y/N] " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo "Aborted."
+            rm -f tfplan
+            exit 0
+        fi
     fi
 
     echo "=== Applying ==="
-    tofu apply -auto-approve "${TOFU_ARGS[@]}"
+    tofu apply -auto-approve tfplan
 
     echo "Infrastructure stage complete."
 }
