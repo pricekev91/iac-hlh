@@ -312,6 +312,32 @@ else
     ok "LXC configuration updated"
 fi
 
+# --- Start LXC (required before SSH key bootstrap) ----------------------------
+
+section "Starting LXC ${LXC_VMID}"
+
+if ! lxc_running; then
+    info "Starting LXC ${LXC_VMID}..."
+    pct start "$LXC_VMID"
+    ok "LXC started"
+else
+    info "LXC ${LXC_VMID} already running"
+fi
+
+# Wait for the container to boot and network to come up
+info "Waiting for LXC ${LXC_VMID} to boot..."
+MAX_WAIT=30
+WAITED=0
+while ! lxc_running; do
+    if [[ $WAITED -ge $MAX_WAIT ]]; then
+        fail "LXC ${LXC_VMID} did not start within ${MAX_WAIT}s" >&2
+        exit 1
+    fi
+    sleep 1
+    WAITED=$((WAITED + 1))
+done
+ok "LXC ${LXC_VMID} is running (${WAITED}s)"
+
 # --- Root password + SSH key bootstrap ----------------------------------------
 
 section "Authentication bootstrap"
@@ -363,16 +389,6 @@ if [[ -f "$SSH_KEY" ]]; then
 else
     warn "SSH key not found at ${SSH_KEY}; skipping SSH key deployment"
     warn "Password-based login is configured. Ensure you remember the password."
-fi
-
-# --- Start LXC ----------------------------------------------------------------
-
-if ! lxc_running; then
-    info "Starting LXC ${LXC_VMID}..."
-    pct start "$LXC_VMID"
-    ok "LXC started"
-else
-    info "LXC ${LXC_VMID} already running"
 fi
 
 # --- Bind mount ZFS datasets --------------------------------------------------
