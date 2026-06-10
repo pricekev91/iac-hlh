@@ -123,7 +123,7 @@ if ! test_key_auth; then
         fi
     fi
 
-    # Bootstrap via pct exec: set root password, deploy public key, enable SSH
+    # Bootstrap via pct exec: set root password, deploy SSH key, enable SSH
     if command -v pct >/dev/null 2>&1 && pct status "$LXC_VMID" >/dev/null 2>&1; then
         echo "=== Bootstrapping LXC ${LXC_VMID} ==="
 
@@ -132,6 +132,12 @@ if ! test_key_auth; then
 
         # Deploy SSH key and configure SSH
         if [[ -f "$KEY_PUB" ]]; then
+            # Create .ssh directory first (pct push cannot create parent dirs)
+            pct exec "$LXC_VMID" -- bash -lc "
+                set -euo pipefail
+                mkdir -p /root/.ssh
+                chmod 700 /root/.ssh
+            "
             # Deploy SSH key into LXC via pct push (rootfs storage)
             pct push "$LXC_VMID" "$KEY_PUB" "rootfs:/root/.ssh/authorized_keys"
             pct exec "$LXC_VMID" -- bash -lc "
@@ -140,15 +146,13 @@ if ! test_key_auth; then
                     sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
                     sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
                 fi
-                mkdir -p /root/.ssh
-                chmod 700 /root/.ssh
                 chmod 600 /root/.ssh/authorized_keys
                 chown -R root:root /root/.ssh
                 systemctl restart ssh || systemctl restart sshd || service ssh restart || true
             "
         else
             echo "WARNING: ${KEY_PUB} not found; SSH key cannot be deployed." >&2
-            # Just set password and restart SSH
+            # Just set password and enable SSH
             pct exec "$LXC_VMID" -- bash -lc "
                 if [ -f /etc/ssh/sshd_config ]; then
                     sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config

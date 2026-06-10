@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="${SCRIPT_DIR}/opentofu"
 CONFIG_SCRIPT="${SCRIPT_DIR}/configure-hlh-docker.sh"
 MODE="apply"
+NUKE=0
 OFFLINE=0
 RUN_TF=1
 RUN_CONFIG=1
@@ -18,6 +19,7 @@ Usage:
 Options:
   --plan           Run plan-only for OpenTofu; skip Ansible configuration.
   --apply          Apply OpenTofu and run Ansible configuration (default).
+  --nuke           Destroy existing infrastructure (tofu destroy) then rebuild.
   --offline        Use offline-friendly behavior (no upgrade/init changes).
   --tf-only        Run only OpenTofu stage.
   --config-only    Run only Ansible stage.
@@ -79,6 +81,27 @@ run_opentofu_stage() {
 
     cd "${TF_DIR}"
 
+    # Nuke mode: destroy existing infrastructure first.
+    if [[ "$NUKE" -eq 1 && "$MODE" != "plan" ]]; then
+        echo "=== NUKE: Destroying existing infrastructure ==="
+        TOFU_DESTROY_ARGS=(
+            -var "pm_endpoint=${TF_VAR_pm_endpoint}"
+            -var "pm_username=${TF_VAR_pm_username}"
+            -var "pm_api_token=${TF_VAR_pm_api_token}"
+            -var "pm_password=${TF_VAR_pm_password}"
+            -var "target_node=${TF_VAR_target_node}"
+            -var "ostemplate=${TF_VAR_ostemplate}"
+            -var "cores=${TF_VAR_cores}"
+            -var "memory=${TF_VAR_memory}"
+            -var "network_tag=${TF_VAR_network_tag}"
+        )
+        if [[ -n "${TF_VAR_lxc_root_password:-}" ]]; then
+            TOFU_DESTROY_ARGS+=( -var "lxc_root_password=${TF_VAR_lxc_root_password}" )
+        fi
+        tofu destroy -auto-approve "${TOFU_DESTROY_ARGS[@]}"
+        echo "=== Nuke complete ==="
+    fi
+
     echo "=== Initializing OpenTofu ==="
     if [[ "$OFFLINE" -eq 1 ]]; then
         tofu init -get=false
@@ -139,6 +162,10 @@ while [[ $# -gt 0 ]]; do
             RUN_CONFIG=0
             ;;
         --apply)
+            MODE="apply"
+            ;;
+        --nuke)
+            NUKE=1
             MODE="apply"
             ;;
         --offline)
