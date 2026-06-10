@@ -329,7 +329,7 @@ if [[ -z "$ROOT_PWD" ]]; then
     fi
 fi
 
-pct set "$LXC_VMID" --password "$ROOT_PWD"
+pct set "$LXC_VMID" --rootpw "$ROOT_PWD"
 ok "Root password set"
 
 # Deploy SSH public key into LXC for key-based auth
