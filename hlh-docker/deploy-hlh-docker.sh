@@ -319,18 +319,11 @@ section "Authentication bootstrap"
 # Get root password (prompt if not set)
 ROOT_PWD="${HLH_LXC_ROOTPWD:-}"
 if [[ -z "$ROOT_PWD" ]]; then
-    read -rsp "LXC root password: " ROOT_PWD
-    echo ""
-    read -rsp "Confirm root password: " ROOT_PWD2
-    echo ""
-    if [[ "$ROOT_PWD" != "$ROOT_PWD2" ]]; then
-        fail "Passwords do not match." >&2
-        exit 1
-    fi
+    info "No root password provided. You can set it later with: pct enter $LXC_VMID && passwd root"
+else
+    pct set "$LXC_VMID" --rootpw "$ROOT_PWD"
+    ok "Root password set"
 fi
-
-pct set "$LXC_VMID" --rootpw "$ROOT_PWD"
-ok "Root password set"
 
 # Deploy SSH public key into LXC for key-based auth
 if [[ -f "$SSH_KEY" ]]; then
