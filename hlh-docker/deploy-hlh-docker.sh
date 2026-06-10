@@ -24,7 +24,6 @@
 #   HLH_TARGET_NODE       Proxmox node name    (default: prox01)
 #   HLH_TEMPLATE          OS template path     (default: local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst)
 #   HLH_PROXMOX_ENDPOINT  Proxmox API URL      (default: https://192.168.1.10:8006/)
-#   HLH_SSH_KEY           Path to SSH public key for bootstrap (default: ~/.ssh/id_ed25519.pub)
 #   HLH_CORES             vCPU count           (default: 4)
 #   HLH_MEMORY            Memory in MB         (default: 4096)
 #   HLH_DISK              Rootfs size in GB    (default: 32)
@@ -49,7 +48,6 @@ LXC_NET="${HLH_LXC_NET:-vmbr0}"
 PROXMOX_ENDPOINT="${HLH_PROXMOX_ENDPOINT:-https://192.168.1.10:8006/}"
 TARGET_NODE="${HLH_TARGET_NODE:-prox01}"
 TEMPLATE="${HLH_TEMPLATE:-local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst}"
-SSH_KEY="${HLH_SSH_KEY:-$HOME/.ssh/id_ed25519.pub}"
 CORES="${HLH_CORES:-4}"
 MEMORY="${HLH_MEMORY:-4096}"
 DISK="${HLH_DISK:-32}"
@@ -312,7 +310,7 @@ else
     ok "LXC configuration updated"
 fi
 
-# --- Start LXC (required before SSH key bootstrap) ----------------------------
+# --- Start LXC ----------------------------------------------------------------
 
 section "Starting LXC ${LXC_VMID}"
 
@@ -338,57 +336,16 @@ while ! lxc_running; do
 done
 ok "LXC ${LXC_VMID} is running (${WAITED}s)"
 
-# --- Root password + SSH key bootstrap ----------------------------------------
+# --- Root password --------------------------------------------------------------
 
-section "Authentication bootstrap"
+section "Root password"
 
-# Get root password (prompt if not set)
 ROOT_PWD="${HLH_LXC_ROOTPWD:-}"
 if [[ -z "$ROOT_PWD" ]]; then
-    info "No root password provided. You can set it later with: pct enter $LXC_VMID && passwd root"
+    info "No root password provided. Set it later with: pct enter $LXC_VMID && passwd root"
 else
     pct set "$LXC_VMID" --rootpw "$ROOT_PWD"
     ok "Root password set"
-fi
-
-# Deploy SSH public key into LXC for key-based auth
-if [[ -f "$SSH_KEY" ]]; then
-    info "Deploying SSH public key to LXC..."
-
-    if lxc_running; then
-        pct exec "$LXC_VMID" -- bash -lc '
-            set -euo pipefail
-            mkdir -p /root/.ssh
-            chmod 700 /root/.ssh
-        '
-        pct push "$LXC_VMID" "$SSH_KEY" "rootfs:/root/.ssh/authorized_keys"
-        pct exec "$LXC_VMID" -- bash -lc '
-            set -euo pipefail
-            chmod 600 /root/.ssh/authorized_keys
-            chown -R root:root /root/.ssh
-            if [ -f /etc/ssh/sshd_config ]; then
-                sed -ri "\/^[^#]*PermitRootLogin/s/.*/PermitRootLogin prohibit-password/" /etc/ssh/sshd_config
-            fi
-            systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
-        '
-    else
-        pct exec "$LXC_VMID" -- bash -lc '
-            set -euo pipefail
-            mkdir -p /root/.ssh
-            chmod 700 /root/.ssh
-            echo "'"$(cat "$SSH_KEY")"'" > /root/.ssh/authorized_keys
-            chmod 600 /root/.ssh/authorized_keys
-            chown -R root:root /root/.ssh
-            if [ -f /etc/ssh/sshd_config ]; then
-                sed -ri "\/^[^#]*PermitRootLogin/s/.*/PermitRootLogin prohibit-password/" /etc/ssh/sshd_config
-            fi
-            systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
-        '
-    fi
-    ok "SSH public key deployed"
-else
-    warn "SSH key not found at ${SSH_KEY}; skipping SSH key deployment"
-    warn "Password-based login is configured. Ensure you remember the password."
 fi
 
 # --- Bind mount ZFS datasets --------------------------------------------------
