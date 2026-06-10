@@ -27,11 +27,11 @@ Options:
   -h, --help       Show this help.
 
 Required for OpenTofu stage:
-  Proxmox auth via username/password or API token.
-  If no TF_VAR_pm_api_token is set, you will be prompted for root@pam password.
+  Proxmox auth via API token (TF_VAR_pm_api_token) or password (TF_VAR_pm_password).
+  If neither is set, tofu will use empty credentials (will fail with auth error).
 
 Optional:
-  TF_VAR_lxc_root_password (if omitted, deploy will prompt in apply mode)
+  TF_VAR_lxc_root_password — password set on the LXC root user during creation.
 EOF
 }
 
@@ -41,26 +41,6 @@ run_opentofu_stage() {
     export TF_VAR_pm_endpoint="${TF_VAR_pm_endpoint:-https://192.168.1.10:8006/}"
     export TF_VAR_pm_username="${TF_VAR_pm_username:-root@pam}"
     export TF_VAR_pm_api_token="${TF_VAR_pm_api_token:-}"
-
-    # Prompt for password if no API token is set.
-    if [[ -z "${TF_VAR_pm_api_token}" ]]; then
-        if [[ -z "${TF_VAR_pm_password:-}" ]]; then
-            read -rsp "Proxmox ${TF_VAR_pm_username} password: " TF_VAR_pm_password
-            echo
-        fi
-
-        # Fail fast on bad API credentials before running tofu plan/apply.
-        AUTH_RESPONSE=$(curl -sk -X POST "${TF_VAR_pm_endpoint}api2/json/access/ticket" \
-            --data-urlencode "username=${TF_VAR_pm_username}" \
-            --data-urlencode "password=${TF_VAR_pm_password}")
-
-        if ! printf '%s' "$AUTH_RESPONSE" | grep -q '"ticket"'; then
-            echo "ERROR: Proxmox API authentication failed for ${TF_VAR_pm_username}." >&2
-            echo "Hint: set TF_VAR_pm_api_token to bypass password auth issues." >&2
-            exit 1
-        fi
-    fi
-
     export TF_VAR_pm_password="${TF_VAR_pm_password:-}"
     export TF_VAR_target_node="${TF_VAR_target_node:-prox01}"
     export TF_VAR_ostemplate="${TF_VAR_ostemplate:-local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst}"
