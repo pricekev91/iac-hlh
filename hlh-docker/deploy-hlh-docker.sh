@@ -353,20 +353,20 @@ fi
 section "Bind mounts"
 
 # Mount Dockhand data (mp1 — rootfs uses mp0)
-if pct get "$LXC_VMID" 2>/dev/null | grep -q "mp1:"; then
+if pct config "$LXC_VMID" 2>/dev/null | grep -q '^mp1:'; then
     info "Mount point mp1 already configured"
 else
     info "Adding bind mount: ${DISK_POOL}:${DOCKHAND_DATA_DS#*/} → /srv/dockhand/data"
-    pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKHAND_DATA_DS#*/},mp=/srv/dockhand/data,content=dir"
+    pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKHAND_DATA_DS#*/},mp=/srv/dockhand/data"
     ok "Bind mount added: Dockhand data"
 fi
 
 # Mount Docker data (mp2)
-if pct get "$LXC_VMID" 2>/dev/null | grep -q "mp2:"; then
+if pct config "$LXC_VMID" 2>/dev/null | grep -q '^mp2:'; then
     info "Mount point mp2 already configured"
 else
     info "Adding bind mount: ${DISK_POOL}:${DOCKER_DATA_DS#*/} → /var/lib/docker"
-    pct set "$LXC_VMID" --mp2 "${DISK_POOL}:${DOCKER_DATA_DS#*/},mp=/var/lib/docker,content=dir"
+    pct set "$LXC_VMID" --mp2 "${DISK_POOL}:${DOCKER_DATA_DS#*/},mp=/var/lib/docker"
     ok "Bind mount added: Docker data"
 fi
 
