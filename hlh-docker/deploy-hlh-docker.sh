@@ -305,7 +305,7 @@ else
 
     # Network: always re-apply to guarantee correct IP
     pct set "$LXC_VMID" \
-        --net "name=eth0,bridge=${LXC_NET},ip=${LXC_IP}/24,gw=${LXC_GW}"
+        --net0 "name=eth0,bridge=${LXC_NET},ip=${LXC_IP}/24,gw=${LXC_GW}"
 
     ok "LXC configuration updated"
 fi
@@ -352,21 +352,21 @@ fi
 
 section "Bind mounts"
 
-# Mount Dockhand data
+# Mount Dockhand data (mp1 — rootfs uses mp0)
 if pct get "$LXC_VMID" 2>/dev/null | grep -q "mp1:"; then
     info "Mount point mp1 already configured"
 else
-    info "Adding bind mount: ${DOCKHAND_DATA_DS} → /srv/dockhand/data"
-    pct set "$LXC_VMID" --mount "bind=${DOCKHAND_DATA_DS},mp=/srv/dockhand/data,vol=${DOCKHAND_DATA_DS},content=dir"
+    info "Adding bind mount: ${DISK_POOL}:${DOCKHAND_DATA_DS#*/} → /srv/dockhand/data"
+    pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKHAND_DATA_DS#*/},mp=/srv/dockhand/data,content=dir"
     ok "Bind mount added: Dockhand data"
 fi
 
-# Mount Docker data
+# Mount Docker data (mp2)
 if pct get "$LXC_VMID" 2>/dev/null | grep -q "mp2:"; then
     info "Mount point mp2 already configured"
 else
-    info "Adding bind mount: ${DOCKER_DATA_DS} → /var/lib/docker"
-    pct set "$LXC_VMID" --mount "bind=${DOCKER_DATA_DS},mp=/var/lib/docker,vol=${DOCKER_DATA_DS},content=dir"
+    info "Adding bind mount: ${DISK_POOL}:${DOCKER_DATA_DS#*/} → /var/lib/docker"
+    pct set "$LXC_VMID" --mp2 "${DISK_POOL}:${DOCKER_DATA_DS#*/},mp=/var/lib/docker,content=dir"
     ok "Bind mount added: Docker data"
 fi
 
