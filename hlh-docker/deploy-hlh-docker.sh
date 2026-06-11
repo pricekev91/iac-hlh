@@ -289,6 +289,8 @@ if ! lxc_exists; then
         --memory "${MEMORY}" \
         --swap 0 \
         --rootfs "${DISK_POOL}:${DISK}" \
+        --mp0 "${DISK_POOL}:${DOCKHAND_DATA_DS#*/},mp=/srv/dockhand/data" \
+        --mp1 "${DISK_POOL}:${DOCKER_DATA_DS#*/},mp=/var/lib/docker" \
         --net0 "name=eth0,bridge=${LXC_NET},ip=${LXC_IP}/24,gw=${LXC_GW}" \
         --features "nesting=${NESTING},keyctl=${KEYCTL}"
 
@@ -352,22 +354,49 @@ fi
 
 section "Bind mounts"
 
-# Mount Dockhand data (mp1 — rootfs uses mp0)
-if pct config "$LXC_VMID" 2>/dev/null | grep -q '^mp1:'; then
-    info "Mount point mp1 already configured"
-else
-    info "Adding bind mount: ${DISK_POOL}:${DOCKHAND_DATA_DS#*/} → /srv/dockhand/data"
-    pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKHAND_DATA_DS#*/},mp=/srv/dockhand/data"
-    ok "Bind mount added: Dockhand data"
-fi
+# Check if mount points are already configured (added via pct create)
+HAS_MP0=$(pct config "$LXC_VMID" 2>/dev/null | grep -c '^mp0:' || true)
+HAS_MP1=$(pct config "$LXC_VMID" 2>/dev/null | grep -c '^mp1:' || true)
 
-# Mount Docker data (mp2)
-if pct config "$LXC_VMID" 2>/dev/null | grep -q '^mp2:'; then
-    info "Mount point mp2 already configured"
-else
+if [[ "$HAS_MP0" -eq 0 || "$HAS_MP1" -eq 0 ]]; then
+    # Mount points not configured — add them (requires stopping container first
+    # because ZFS-backed mounts can't be hotplugged)
+    if lxc_running; then
+        info "Stopping LXC ${LXC_VMID} to add bind mounts..."
+        pct stop "$LXC_VMID"
+        ok "LXC stopped"
+    fi
+
+    info "Adding bind mount: ${DISK_POOL}:${DOCKHAND_DATA_DS#*/} → /srv/dockhand/data"
+    pct set "$LXC_VMID" --mp0 "${DISK_POOL}:${DOCKHAND_DATA_DS#*/},mp=/srv/dockhand/data"
+    ok "Bind mount added: Dockhand data"
+
     info "Adding bind mount: ${DISK_POOL}:${DOCKER_DATA_DS#*/} → /var/lib/docker"
-    pct set "$LXC_VMID" --mp2 "${DISK_POOL}:${DOCKER_DATA_DS#*/},mp=/var/lib/docker"
+    pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKER_DATA_DS#*/},mp=/var/lib/docker"
     ok "Bind mount added: Docker data"
+
+    # Start the container again
+    if ! lxc_running; then
+        info "Starting LXC ${LXC_VMID}..."
+        pct start "$LXC_VMID"
+        ok "LXC started"
+
+        # Wait for boot
+        info "Waiting for LXC ${LXC_VMID} to boot..."
+        MAX_WAIT=30
+        WAITED=0
+        while ! lxc_running; do
+            if [[ $WAITED -ge $MAX_WAIT ]]; then
+                fail "LXC ${LXC_VMID} did not start within ${MAX_WAIT}s" >&2
+                exit 1
+            fi
+            sleep 1
+            WAITED=$((WAITED + 1))
+        done
+        ok "LXC ${LXC_VMID} is running (${WAITED}s)"
+    fi
+else
+    info "Mount points mp0/mp1 already configured"
 fi
 
 # Recreate directories inside LXC (in case they were removed)
