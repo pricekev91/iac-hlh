@@ -247,8 +247,12 @@ if [[ "$NUKE" -eq 1 && lxc_exists ]]; then
         ok "LXC stopped"
     fi
     section "Nuke: destroying LXC ${LXC_VMID}"
-    pct destroy "$LXC_VMID"
-    ok "LXC destroyed"
+    if pct destroy "$LXC_VMID" 2>/dev/null; then
+        ok "LXC destroyed"
+    else
+        info "LXC ${LXC_VMID} config already removed, skipping destroy"
+    fi
+    ok "LXC cleanup done"
 fi
 
 # --- ZFS dataset creation -----------------------------------------------------
