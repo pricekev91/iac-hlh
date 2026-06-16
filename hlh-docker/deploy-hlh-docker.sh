@@ -31,10 +31,10 @@
 #   HLH_NESTING           Enable nesting       (default: 1)
 #   HLH_KEYCTL            Enable keyctl        (default: 1)
 #
-# ZFS ZVOL (single volume, subdirectories per service):
-#   ${DISK_POOL}/hlh-docker-data (30G) → bind-mounted to /srv/data
-#   /srv/data/docker (20G)             → /var/lib/docker
-#   /srv/data/dockhand                 → dockhand data + socket
+# ZFS data dataset (single filesystem, subdirectories per service):
+#   RaidZ1-6TB/hlh-docker-data (30G quota) → bind-mounted at /srv/data
+#   /srv/data/docker                     → /var/lib/docker (via data-root in daemon.json)
+#   /srv/data/dockhand                   → dockhand data + socket
 #
 # ============================================================================
 set -euo pipefail
@@ -226,8 +226,8 @@ if [[ "$MODE" == "plan" ]]; then
         info "Config would be updated if settings differ."
     fi
 
-    info "Would create zvol if missing:"
-    info "  ${DISK_POOL}/${DATA_DS} (30G)"
+    info "Would create data dataset if missing:"
+    info "  RaidZ1-6TB/hlh-docker-data (30G quota)"
 
     info "Would install inside LXC:"
     info "  Docker Engine (docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin)"
@@ -257,43 +257,36 @@ fi
 
 # --- ZFS dataset creation -----------------------------------------------------
 
-section "ZFS datasets"
+section "ZFS data dataset"
 
-create_zfs_ds() {
-    local ds="$1"
+create_data_ds() {
+    local ds="RaidZ1-6TB/hlh-docker-data"
     if zfs list -H -o name "$ds" >/dev/null 2>&1; then
-        ok "Dataset already exists: ${ds}"
+        ok "Data dataset already exists: ${ds}"
     else
-        info "Creating ZFS dataset: ${ds}"
-        if zfs create "$ds"; then
+        info "Creating ZFS data dataset: ${ds} (30G quota)"
+        if zfs create -o quota=30G -o mountpoint=legacy "$ds"; then
             ok "Dataset created: ${ds}"
         else
             fail "Failed to create ZFS dataset: ${ds}" >&2
             exit 1
         fi
     fi
-}
-
-# Create a zvol on the ZFS pool for LXC mount points (pct requires a zvol, not a
-# regular dataset, for mp0/mp1 parameters)
-create_zvol() {
-    local vol_path="$1"    # e.g. RaidZ1-6TB/hlh-docker/docker-data
-    local zvol="${vol_path}"
-    local size="$2"          # e.g. 20G
-    if zfs list -H -o name "$zvol" >/dev/null 2>&1; then
-        ok "Zvol already exists: ${zvol}"
+    # Mount the dataset on the host
+    if mountpoint -q /srv/data 2>/dev/null; then
+        ok "/srv/data is already mounted"
     else
-        info "Creating zvol: ${zvol} (${size})"
-        if zfs create -V "$size" "$zvol"; then
-            ok "Zvol created: ${zvol}"
+        info "Mounting ${ds} at /srv/data"
+        if mount -t zfs "$ds" /srv/data; then
+            ok "Mounted at /srv/data"
         else
-            fail "Failed to create zvol: ${zvol}" >&2
+            fail "Failed to mount ${ds} at /srv/data" >&2
             exit 1
         fi
     fi
 }
 
-create_zvol "${DISK_POOL}/${DATA_DS}" 30G
+create_data_ds
 
 # --- LXC creation / configuration ---------------------------------------------
 
@@ -310,7 +303,6 @@ if ! lxc_exists; then
         --memory "${MEMORY}" \
         --swap 0 \
         --rootfs "${DISK_POOL}:${DISK}" \
-        --mp0 "${DISK_POOL}/${DATA_DS},mp=/srv/data" \
         --net0 "name=eth0,bridge=${LXC_NET},ip=${LXC_IP}/24,gw=${LXC_GW}" \
         --features "nesting=${NESTING},keyctl=${KEYCTL}"
 
@@ -370,7 +362,7 @@ else
     ok "Root password set"
 fi
 
-# --- Bind mount ZFS zvols -----------------------------------------------------
+# --- Bind mount ZFS dataset ---------------------------------------------------
 
 section "Bind mounts"
 
@@ -378,16 +370,17 @@ section "Bind mounts"
 HAS_MP0=$(pct config "$LXC_VMID" 2>/dev/null | grep -c '^mp0:' || true)
 
 if [[ "$HAS_MP0" -eq 0 ]]; then
-    # Mount point not configured — add it (requires stopping container first
-    # because ZFS-backed mounts can't be hotplugged)
+    # Mount point not configured — add it as a bind mount
+    # (ZFS-backed mounts can't be hotplugged as volumes, so we use a bind mount
+    # from the host's /srv/data, following the same pattern as container 101)
     if lxc_running; then
         info "Stopping LXC ${LXC_VMID} to add bind mount..."
         pct stop "$LXC_VMID"
         ok "LXC stopped"
     fi
 
-    info "Adding bind mount: ${DISK_POOL}/${DATA_DS} → /srv/data"
-    pct set "$LXC_VMID" --mp0 "${DISK_POOL}/${DATA_DS},mp=/srv/data"
+    info "Adding bind mount: /srv/data → /srv/data"
+    pct set "$LXC_VMID" --mp0 "/srv/data,mp=/srv/data"
     ok "Bind mount added: data volume"
 
     # Start the container again
@@ -616,7 +609,7 @@ printf "  %-20s %s\n" "Disk:" "${DISK} GB (${DISK_POOL})"
 printf "  %-20s %s\n" "Features:" "nesting=${NESTING}, keyctl=${KEYCTL}"
 printf "  %-20s %s\n" "Unprivileged:" "yes"
 printf "  %-20s %s\n" "Dockhand GUI:" "http://${LXC_IP}:80"
-printf "  %-20s %s\n" "ZFS zvol:" "${DATA_DS} (single volume)"
+printf "  %-20s %s\n" "ZFS data dataset:" "RaidZ1-6TB/hlh-docker-data (30G quota)"
 
 # --- Cleanup old zvols (if nuke mode) -----------------------------------------
 
@@ -624,10 +617,15 @@ if [[ "$NUKE" -eq 1 ]]; then
     section "Cleanup"
     for old in hlh-docker/docker-data hlh-docker/dockhand-data; do
         if zfs list -H -o name "${DISK_POOL}/${old}" >/dev/null 2>&1; then
-            info "Removing old zvol: ${old}"
+            info "Removing old dataset: ${old}"
             zfs destroy "${DISK_POOL}/${old}" 2>/dev/null || true
         fi
     done
+    # Clean up parent dataset if empty
+    if zfs list -H -o name "${DISK_POOL}/hlh-docker" >/dev/null 2>&1; then
+        info "Removing empty parent dataset: hlh-docker"
+        zfs destroy "${DISK_POOL}/hlh-docker" 2>/dev/null || true
+    fi
 fi
 
 section "Deploy complete"
