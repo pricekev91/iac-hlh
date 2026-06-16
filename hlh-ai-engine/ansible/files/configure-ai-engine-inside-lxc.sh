@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # configure-ai-engine-inside-lxc.sh
-# Version: 0.8.2
+# Version: 0.8.3
 # Description: Bootstrap llama.cpp AI engine on Ubuntu 24.04 LXC with ROCm passthrough
 # Target GPU: AMD Radeon 890M (gfx1150/Strix Halo) on Proxmox 9.x privileged LXC
 # Requirements: Run as root inside privileged LXC with GPU passthrough and /srv/ai/models bind mount
@@ -26,6 +26,8 @@
 #            switch-model.sh now copied to /srv/ai/models/ to keep both copies in sync
 #            Added startup wait loop + web UI URL confirmation after model switch
 #            switch-model.sh bumped to v1.4.1
+#   0.8.3 - switch-model.sh v1.4.2: added 72K (73728) and 96K (98304) ctx-size options
+#            VRAM budget table updated with 72K and 96K KV cache estimates
 
 set -euo pipefail
 
@@ -202,14 +204,15 @@ echo "[5/7] Creating interactive model switcher: $SWITCH_SCRIPT..."
 cat > "$SWITCH_SCRIPT" << 'EOS'
 #!/usr/bin/env bash
 # switch-model.sh
-# Version: 1.4.1
+# Version: 1.4.2
 # Description: Interactive model switcher for llama.cpp ai-engine service
 # Supports: model selection, ctx-size, KV cache quantization, MTP auto-detect
 # Changelog:
 #   1.0.0 - Initial version (model switch only)
 #   1.1.0 - Added ctx-size selection and KV cache quantization prompt
 #   1.2.0 - Added VRAM budget reference table to banner
-#            ctx-size options expanded: 64K / 32K / 16K / 8K / custom
+#            ctx-size options expanded: 96K / 72K / 64K / 32K / 16K / 8K / custom
+#   1.4.2 - Added 72K / 96K ctx-size options + VRAM table rows
 #            Shows current model, ctx-size, and KV cache state on launch
 #   1.3.0 - Auto-detect MTP models by filename (case-insensitive 'MTP' match)
 #            Toggle --spec-type draft-mtp / --spec-draft-n-max / --parallel 1
@@ -219,6 +222,7 @@ cat > "$SWITCH_SCRIPT" << 'EOS'
 #   1.4.0 - Remove turboquant menu option until llama.cpp supports it in main
 #   1.4.1 - Fixed triple-nested rewrite_execstart bug (function was never callable)
 #            Added startup wait loop and web UI URL confirmation after switch
+#   1.4.2 - Added 72K / 96K ctx-size options + VRAM table rows
 
 set -euo pipefail
 
@@ -296,10 +300,12 @@ echo "║    35B Q4_K_M    ~21 GB   35B Q5_K_M   ~25 GB                    ║"
 echo "║                                                                  ║"
 echo "║  KV Cache (added on top — scales with ctx size):                 ║"
 echo "║                  KV q4_0    KV q6_0    KV q8_0                   ║"
-echo "║    64K context   ~8 GB      ~12 GB     ~18 GB                    ║"
-echo "║    32K context   ~4 GB      ~ 6 GB     ~ 9 GB                    ║"
-echo "║    16K context   ~2 GB      ~ 3 GB     ~ 5 GB                    ║"
-echo "║     8K context   ~1 GB      ~ 2 GB     ~ 3 GB                    ║"
+echo "║    96K context   ~12 GB     ~18 GB     ~24 GB                    ║"
+echo "║    72K context   ~ 9 GB     ~14 GB     ~18 GB                    ║"
+echo "║    64K context   ~ 8 GB     ~12 GB     ~18 GB                    ║"
+echo "║    32K context   ~ 4 GB      ~ 6 GB     ~ 9 GB                    ║"
+echo "║    16K context   ~ 2 GB      ~ 3 GB     ~ 5 GB                    ║"
+echo "║     8K context   ~ 1 GB      ~ 2 GB     ~ 3 GB                    ║"
 echo "║                                                                  ║"
 echo "║  Example: 70B Q4_K_M (~38 GB) + 64K q8_0 (~18 GB) = ~56 GB       ║"
 echo "║           70B Q4_K_M (~38 GB) + 64K q4_0 (~ 8 GB) = ~46 GB       ║"
@@ -346,19 +352,23 @@ NEW_MODEL="${MODELS[$((CHOICE-1))]}"
 # ─── Context size selection ────────────────────────────────────────────────────
 echo ""
 echo "Context size options:"
-echo "   1) 65536  (64K) — full long-context"
-echo "   2) 32768  (32K) — half, saves ~50% KV VRAM"
-echo "   3) 16384  (16K) — quarter, minimal KV usage"
-echo "   4)  8192   (8K) — minimal, maximum VRAM headroom"
-echo "   5) Custom       — enter manually"
+echo "   1) 98304  (96K)  — maximum long-context"
+echo "   2) 73728  (72K)  — extended long-context"
+echo "   3) 65536  (64K)  — full long-context"
+echo "   4) 32768  (32K)  — half, saves ~50% KV VRAM"
+echo "   5) 16384  (16K)  — quarter, minimal KV usage"
+echo "   6)  8192   (8K)  — minimal, maximum VRAM headroom"
+echo "   7) Custom         — enter manually"
 
 read -rp "Select context size [default: 65536]: " CTX_CHOICE
-case "${CTX_CHOICE:-1}" in
-  1) NEW_CTX=65536 ;;
-  2) NEW_CTX=32768 ;;
-  3) NEW_CTX=16384 ;;
-  4) NEW_CTX=8192  ;;
-  5)
+case "${CTX_CHOICE:-3}" in
+  1) NEW_CTX=98304  ;;
+  2) NEW_CTX=73728  ;;
+  3) NEW_CTX=65536  ;;
+  4) NEW_CTX=32768  ;;
+  5) NEW_CTX=16384  ;;
+  6) NEW_CTX=8192   ;;
+  7)
     read -rp "Enter custom ctx-size: " NEW_CTX
     if ! [[ "$NEW_CTX" =~ ^[0-9]+$ ]]; then
       echo "Invalid ctx-size."
@@ -467,7 +477,7 @@ echo ""
 echo "[Service status]"
 systemctl status "$SERVICE_NAME" --no-pager
 echo ""
-echo "[Bootstrap complete - v0.8.2]"
+echo "[Bootstrap complete - v0.8.3]"
 echo "  Native llama.cpp web UI : http://<container-ip>:80"
 echo "  Switch models with      : switch-model.sh"
 echo "  GPU device              : gfx1150 (AMD Radeon 890M)"
