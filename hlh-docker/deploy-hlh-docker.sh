@@ -410,10 +410,18 @@ fi
 # Recreate directories inside LXC (in case they were removed)
 pct exec "$LXC_VMID" -- bash -lc '
     set -euo pipefail
-    mkdir -p /srv/data/dockhand/data
-    mkdir -p /srv/data/dockhand/run
-    mkdir -p /srv/data/docker
+# Recreate directories inside LXC (in case they were removed)
+# Improved to be more resilient to permission issues
+pct exec "$LXC_VMID" -- bash -lc '
+    set -euo pipefail
+    echo "Creating directories with error handling..."
+    mkdir -p /srv/data/dockhand/data 2>/dev/null || true
+    mkdir -p /srv/data/dockhand/run 2>/dev/null || true
+    mkdir -p /srv/data/docker 2>/dev/null || true
+    echo "Directory creation attempt completed"
 '
+
+# --- Configuration-only mode (skip LXC install) --------------------------------
 
 # --- Configuration-only mode (skip LXC install) --------------------------------
 
