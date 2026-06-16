@@ -55,8 +55,8 @@ DISK_POOL="${HLH_DISK_POOL:-RaidZ1-6TB}"
 NESTING="${HLH_NESTING:-1}"
 KEYCTL="${HLH_KEYCTL:-1}"
 
-DOCKER_DATA_DS="hlh-docker/docker-data"
-DOCKHAND_DATA_DS="hlh-docker/dockhand-data"
+DOCKER_DATA_DS="docker-data"
+DOCKHAND_DATA_DS="dockhand-data"
 
 # --- Mode flags ---------------------------------------------------------------
 
