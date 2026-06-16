@@ -387,11 +387,11 @@ if [[ "$HAS_MP0" -eq 0 || "$HAS_MP1" -eq 0 ]]; then
     fi
 
     info "Adding bind mount: ${DOCKHAND_DATA_DS} → /srv/dockhand/data"
-    pct set "$LXC_VMID" --mp0 "${DISK_POOL}:${DOCKHAND_DATA_DS},content=disk,mp=/srv/dockhand/data"
+    pct set "$LXC_VMID" --mp0 "${DISK_POOL}:${DOCKHAND_DATA_DS},mp=/srv/dockhand/data"
     ok "Bind mount added: Dockhand data"
 
     info "Adding bind mount: ${DOCKER_DATA_DS} → /var/lib/docker"
-    pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKER_DATA_DS},content=disk,mp=/var/lib/docker"
+    pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKER_DATA_DS},mp=/var/lib/docker"
     ok "Bind mount added: Docker data"
 
     # Start the container again
