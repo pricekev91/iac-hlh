@@ -31,9 +31,10 @@
 #   HLH_NESTING           Enable nesting       (default: 1)
 #   HLH_KEYCTL            Enable keyctl        (default: 1)
 #
-# ZFS ZVOLS (auto-created if missing):
-#   ${DISK_POOL}/hlh-docker/docker-data (20G) → bind-mounted to /var/lib/docker
-#   ${DISK_POOL}/hlh-docker/dockhand-data (5G) → bind-mounted to /srv/dockhand/data
+# ZFS ZVOL (single volume, subdirectories per service):
+#   ${DISK_POOL}/hlh-docker-data (30G) → bind-mounted to /srv/data
+#   /srv/data/docker (20G)             → /var/lib/docker
+#   /srv/data/dockhand                 → dockhand data + socket
 #
 # ============================================================================
 set -euo pipefail
@@ -55,8 +56,7 @@ DISK_POOL="${HLH_DISK_POOL:-RaidZ1-6TB}"
 NESTING="${HLH_NESTING:-1}"
 KEYCTL="${HLH_KEYCTL:-1}"
 
-DOCKER_DATA_DS="docker-data"
-DOCKHAND_DATA_DS="dockhand-data"
+DATA_DS="hlh-docker-data"
 
 # --- Mode flags ---------------------------------------------------------------
 
@@ -226,9 +226,8 @@ if [[ "$MODE" == "plan" ]]; then
         info "Config would be updated if settings differ."
     fi
 
-    info "Would create zvols if missing:"
-    info "  ${DISK_POOL}/${DOCKER_DATA_DS} (20G)"
-    info "  ${DISK_POOL}/${DOCKHAND_DATA_DS} (5G)"
+    info "Would create zvol if missing:"
+    info "  ${DISK_POOL}/${DATA_DS} (30G)"
 
     info "Would install inside LXC:"
     info "  Docker Engine (docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin)"
@@ -290,8 +289,7 @@ create_zvol() {
     fi
 }
 
-create_zvol "${DISK_POOL}/${DOCKER_DATA_DS}" 20G
-create_zvol "${DISK_POOL}/${DOCKHAND_DATA_DS}" 5G
+create_zvol "${DISK_POOL}/${DATA_DS}" 30G
 
 # --- LXC creation / configuration ---------------------------------------------
 
@@ -308,8 +306,7 @@ if ! lxc_exists; then
         --memory "${MEMORY}" \
         --swap 0 \
         --rootfs "${DISK_POOL}:${DISK}" \
-        --mp0 "${DISK_POOL}:${DOCKHAND_DATA_DS},mp=/srv/dockhand/data" \
-        --mp1 "${DISK_POOL}:${DOCKER_DATA_DS},mp=/var/lib/docker" \
+        --mp0 "${DISK_POOL}:${DATA_DS},mp=/srv/data" \
         --net0 "name=eth0,bridge=${LXC_NET},ip=${LXC_IP}/24,gw=${LXC_GW}" \
         --features "nesting=${NESTING},keyctl=${KEYCTL}"
 
@@ -373,26 +370,21 @@ fi
 
 section "Bind mounts"
 
-# Check if mount points are already configured (added via pct create)
+# Check if the mount point is already configured
 HAS_MP0=$(pct config "$LXC_VMID" 2>/dev/null | grep -c '^mp0:' || true)
-HAS_MP1=$(pct config "$LXC_VMID" 2>/dev/null | grep -c '^mp1:' || true)
 
-if [[ "$HAS_MP0" -eq 0 || "$HAS_MP1" -eq 0 ]]; then
-    # Mount points not configured — add them (requires stopping container first
+if [[ "$HAS_MP0" -eq 0 ]]; then
+    # Mount point not configured — add it (requires stopping container first
     # because ZFS-backed mounts can't be hotplugged)
     if lxc_running; then
-        info "Stopping LXC ${LXC_VMID} to add bind mounts..."
+        info "Stopping LXC ${LXC_VMID} to add bind mount..."
         pct stop "$LXC_VMID"
         ok "LXC stopped"
     fi
 
-    info "Adding bind mount: ${DISK_POOL}/${DOCKHAND_DATA_DS} → /srv/dockhand/data"
-    pct set "$LXC_VMID" --mp0 "${DISK_POOL}:${DOCKHAND_DATA_DS},mp=/srv/dockhand/data"
-    ok "Bind mount added: Dockhand data"
-
-    info "Adding bind mount: ${DISK_POOL}/${DOCKER_DATA_DS} → /var/lib/docker"
-    pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKER_DATA_DS},mp=/var/lib/docker"
-    ok "Bind mount added: Docker data"
+    info "Adding bind mount: ${DISK_POOL}/${DATA_DS} → /srv/data"
+    pct set "$LXC_VMID" --mp0 "${DISK_POOL}:${DATA_DS},mp=/srv/data"
+    ok "Bind mount added: data volume"
 
     # Start the container again
     if ! lxc_running; then
@@ -415,14 +407,15 @@ if [[ "$HAS_MP0" -eq 0 || "$HAS_MP1" -eq 0 ]]; then
         ok "LXC ${LXC_VMID} is running (${WAITED}s)"
     fi
 else
-    info "Mount points mp0/mp1 already configured"
+    info "Mount point mp0 already configured"
 fi
 
 # Recreate directories inside LXC (in case they were removed)
 pct exec "$LXC_VMID" -- bash -lc '
     set -euo pipefail
-    mkdir -p /srv/dockhand/data
-    mkdir -p /srv/dockhand/run
+    mkdir -p /srv/data/dockhand/data
+    mkdir -p /srv/data/dockhand/run
+    mkdir -p /srv/data/docker
 '
 
 # --- Configuration-only mode (skip LXC install) --------------------------------
@@ -499,8 +492,11 @@ lxc_cmd '
     # Ensure docker group exists
     getent group docker >/dev/null 2>&1 || groupadd docker
 
-    # Add root to docker group (allows docker commands without sudo)
-    usermod -aG docker root 2>/dev/null || true
+    # Configure Docker data-root to use the subdirectory on the shared mount
+    mkdir -p /etc/docker
+    printf '"'"'{"data-root": "/srv/data/docker"}\n'"'"' > /etc/docker/daemon.json
+
+    systemctl restart docker
 '
 
 ok "Docker configuration complete"
@@ -527,9 +523,9 @@ else
         docker run -d \
             --name dockhand \
             --restart unless-stopped \
-            -v /srv/dockhand/data:/data \
+            -v /srv/data/dockhand/data:/data \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /srv/dockhand/run:/run \
+            -v /srv/data/dockhand/run:/run \
             -p 80:3000 \
             fnsys/dockhand:latest
 
@@ -588,17 +584,17 @@ pct exec "$LXC_VMID" -- bash -lc 'docker ps --filter name=dockhand --format "tab
 info "Dockhand data mount:"
 pct exec "$LXC_VMID" -- bash -lc 'mount | grep dockhand || echo "Not mounted"'
 
-# 7. Docker data mount
-info "Docker data mount:"
-pct exec "$LXC_VMID" -- bash -lc 'mount | grep docker || echo "Not mounted"'
+# 7. Data volume mount
+info "Data volume mount:"
+pct exec "$LXC_VMID" -- bash -lc 'mount | grep /srv/data || echo "Not mounted"'
 
 # 8. LazyDocker
 info "LazyDocker version:"
 pct exec "$LXC_VMID" -- bash -lc 'lazydocker --version 2>/dev/null || echo "Not installed"'
 
-# 9. ZFS zvols
-info "ZFS zvols:"
-zfs list "${DISK_POOL}/hlh-docker"
+# 9. ZFS zvol
+info "ZFS zvol:"
+zfs list "${DISK_POOL}/${DATA_DS}"
 
 # --- Final summary ------------------------------------------------------------
 
@@ -616,9 +612,19 @@ printf "  %-20s %s\n" "Disk:" "${DISK} GB (${DISK_POOL})"
 printf "  %-20s %s\n" "Features:" "nesting=${NESTING}, keyctl=${KEYCTL}"
 printf "  %-20s %s\n" "Unprivileged:" "yes"
 printf "  %-20s %s\n" "Dockhand GUI:" "http://${LXC_IP}:80"
-printf "  %-20s %s\n" "Dockhand data:" "/srv/dockhand/data"
-printf "  %-20s %s\n" "Docker socket:" "/var/run/docker.sock"
-printf "  %-20s %s\n" "ZFS zvols:" "${DOCKER_DATA_DS}, ${DOCKHAND_DATA_DS}"
+printf "  %-20s %s\n" "ZFS zvol:" "${DATA_DS} (single volume)"
+
+# --- Cleanup old zvols (if nuke mode) -----------------------------------------
+
+if [[ "$NUKE" -eq 1 ]]; then
+    section "Cleanup"
+    for old in hlh-docker/docker-data hlh-docker/dockhand-data; do
+        if zfs list -H -o name "${DISK_POOL}/${old}" >/dev/null 2>&1; then
+            info "Removing old zvol: ${old}"
+            zfs destroy "${DISK_POOL}/${old}" 2>/dev/null || true
+        fi
+    done
+fi
 
 section "Deploy complete"
 ok "LXC ${LXC_VMID} (${LXC_HOSTNAME}) is live at ${LXC_IP}"
