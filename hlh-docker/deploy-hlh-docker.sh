@@ -55,8 +55,8 @@ DISK_POOL="${HLH_DISK_POOL:-RaidZ1-6TB}"
 NESTING="${HLH_NESTING:-1}"
 KEYCTL="${HLH_KEYCTL:-1}"
 
-DOCKER_DATA_DS="${DISK_POOL}/hlh-docker/docker-data"
-DOCKHAND_DATA_DS="${DISK_POOL}/hlh-docker/dockhand-data"
+DOCKER_DATA_DS="hlh-docker/docker-data"
+DOCKHAND_DATA_DS="hlh-docker/dockhand-data"
 
 # --- Mode flags ---------------------------------------------------------------
 
@@ -227,8 +227,8 @@ if [[ "$MODE" == "plan" ]]; then
     fi
 
     info "Would create zvols if missing:"
-    info "  ${DOCKER_DATA_DS} (20G)"
-    info "  ${DOCKHAND_DATA_DS} (5G)"
+    info "  ${DISK_POOL}/${DOCKER_DATA_DS} (20G)"
+    info "  ${DISK_POOL}/${DOCKHAND_DATA_DS} (5G)"
 
     info "Would install inside LXC:"
     info "  Docker Engine (docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin)"
@@ -290,8 +290,8 @@ create_zvol() {
     fi
 }
 
-create_zvol "$DOCKER_DATA_DS" 20G
-create_zvol "$DOCKHAND_DATA_DS" 5G
+create_zvol "${DISK_POOL}/${DOCKER_DATA_DS}" 20G
+create_zvol "${DISK_POOL}/${DOCKHAND_DATA_DS}" 5G
 
 # --- LXC creation / configuration ---------------------------------------------
 
@@ -386,11 +386,11 @@ if [[ "$HAS_MP0" -eq 0 || "$HAS_MP1" -eq 0 ]]; then
         ok "LXC stopped"
     fi
 
-    info "Adding bind mount: ${DOCKHAND_DATA_DS} → /srv/dockhand/data"
+    info "Adding bind mount: ${DISK_POOL}/${DOCKHAND_DATA_DS} → /srv/dockhand/data"
     pct set "$LXC_VMID" --mp0 "${DISK_POOL}:${DOCKHAND_DATA_DS},mp=/srv/dockhand/data"
     ok "Bind mount added: Dockhand data"
 
-    info "Adding bind mount: ${DOCKER_DATA_DS} → /var/lib/docker"
+    info "Adding bind mount: ${DISK_POOL}/${DOCKER_DATA_DS} → /var/lib/docker"
     pct set "$LXC_VMID" --mp1 "${DISK_POOL}:${DOCKER_DATA_DS},mp=/var/lib/docker"
     ok "Bind mount added: Docker data"
 
