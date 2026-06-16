@@ -306,7 +306,7 @@ if ! lxc_exists; then
         --memory "${MEMORY}" \
         --swap 0 \
         --rootfs "${DISK_POOL}:${DISK}" \
-        --mp0 "${DISK_POOL}:${DATA_DS},mp=/srv/data" \
+        --mp0 "${DISK_POOL}/${DATA_DS},mp=/srv/data" \
         --net0 "name=eth0,bridge=${LXC_NET},ip=${LXC_IP}/24,gw=${LXC_GW}" \
         --features "nesting=${NESTING},keyctl=${KEYCTL}"
 
@@ -383,7 +383,7 @@ if [[ "$HAS_MP0" -eq 0 ]]; then
     fi
 
     info "Adding bind mount: ${DISK_POOL}/${DATA_DS} → /srv/data"
-    pct set "$LXC_VMID" --mp0 "${DISK_POOL}:${DATA_DS},mp=/srv/data"
+    pct set "$LXC_VMID" --mp0 "${DISK_POOL}/${DATA_DS},mp=/srv/data"
     ok "Bind mount added: data volume"
 
     # Start the container again
