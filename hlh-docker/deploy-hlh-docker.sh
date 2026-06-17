@@ -23,7 +23,6 @@
 #   HLH_LXC_ROOTPWD       Root password         (interactive prompt if unset)
 #   HLH_TARGET_NODE       Proxmox node name    (default: prox01)
 #   HLH_TEMPLATE          OS template path     (default: local:vztmpl/ubuntu-26.04-standard_26.04-1_amd64.tar.zst)
-#   HLH_PROXMOX_ENDPOINT  Proxmox API URL      (default: https://192.168.1.10:8006/)
 #   HLH_CORES             vCPU count           (default: 4)
 #   HLH_MEMORY            Memory in MB         (default: 4096)
 #   HLH_DISK              Rootfs size in GB    (default: 32)
@@ -37,6 +36,7 @@
 #   /srv/data/dockhand                   → dockhand data + socket
 #
 # ============================================================================
+
 set -euo pipefail
 
 # --- Configuration -----------------------------------------------------------
@@ -350,7 +350,7 @@ while ! lxc_running; do
 done
 ok "LXC ${LXC_VMID} is running (${WAITED}s)"
 
-# --- Root password --------------------------------------------------------------
+# --- Root password ----------------------------------------------------------
 
 section "Root password"
 
@@ -407,11 +407,7 @@ else
     info "Mount point mp0 already configured"
 fi
 
-# Recreate directories inside LXC (in case they were removed)
-pct exec "$LXC_VMID" -- bash -lc '
-    set -euo pipefail
-# Recreate directories inside LXC (in case they were removed)
-# Improved to be more resilient to permission issues
+# Create directories inside LXC (in case they were removed)
 pct exec "$LXC_VMID" -- bash -lc '
     set -euo pipefail
     echo "Creating directories with error handling..."
@@ -420,8 +416,6 @@ pct exec "$LXC_VMID" -- bash -lc '
     mkdir -p /srv/data/docker 2>/dev/null || true
     echo "Directory creation attempt completed"
 '
-
-# --- Configuration-only mode (skip LXC install) --------------------------------
 
 # --- Configuration-only mode (skip LXC install) --------------------------------
 
@@ -499,11 +493,10 @@ lxc_cmd '
 
     # Configure Docker data-root to use the subdirectory on the shared mount
     mkdir -p /etc/docker
-    printf '"'"'{"data-root": "/srv/data/docker"}\n'"'"' > /etc/docker/daemon.json
+    printf '\''{"data-root": "/srv/data/docker"}\n'\'' > /etc/docker/daemon.json
 
     systemctl restart docker
 '
-
 ok "Docker configuration complete"
 
 # --- Dockhand ---
@@ -533,7 +526,6 @@ else
             -v /srv/data/dockhand/run:/run \
             -p 80:3000 \
             fnsys/dockhand:latest
-
         echo "Dockhand container started"
     '
     ok "Dockhand deployed"
@@ -583,7 +575,7 @@ pct exec "$LXC_VMID" -- bash -lc 'ls -la /var/run/docker.sock 2>/dev/null || ech
 
 # 5. Dockhand
 info "Dockhand container:"
-pct exec "$LXC_VMID" -- bash -lc 'docker ps --filter name=dockhand --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"' 2>/dev/null || echo "Dockhand not running"
+pct exec "$LXC_VMID" -- bash -lc 'docker ps --filter name=dockhand --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "Dockhand not running"'
 
 # 6. Dockhand data mount
 info "Dockhand data mount:"
@@ -604,7 +596,6 @@ zfs list "${DISK_POOL}/${DATA_DS}"
 # --- Final summary ------------------------------------------------------------
 
 section "Deployment summary"
-
 printf "  %-20s %s\n" "LXC VMID:" "${LXC_VMID}"
 printf "  %-20s %s\n" "Hostname:" "${LXC_HOSTNAME}"
 printf "  %-20s %s\n" "IP Address:" "${LXC_IP}"

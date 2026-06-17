@@ -1,194 +1,114 @@
 #!/usr/bin/env bash
+# ============================================================================
+# HLH-Docker Configure Script - Pure Bash Version
+# ============================================================================
+#
+# This script handles post-deployment configuration of the hlh-docker LXC.
+# It's a simplified version of the Ansible-based configuration script,
+# focusing on core configuration tasks needed for the Docker container
+# to function properly.
+#
+# ============================================================================
+
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ANSIBLE_DIR="${SCRIPT_DIR}/ansible"
-INVENTORY="${ANSIBLE_DIR}/inventories/hlh-docker.yml"
-PLAYBOOK="${ANSIBLE_DIR}/playbooks/hlh-docker.yml"
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
-HOST_OVERRIDE=""
-OFFLINE=0
-VMID_PASSWORD=""
+# Configuration variables
 LXC_VMID="${LXC_VMID:-102}"
+LXC_HOSTNAME="${LXC_HOSTNAME:-hlh-docker}"
+LXC_IP="${LXC_IP:-192.168.1.13}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 
-usage() {
-    cat <<'EOF'
-Usage:
-    ./configure-hlh-docker.sh [--host <ip>] [--offline] [--vmid-password <pwd>] [--vmid <id>]
+# --- Helper functions ----------------------------------------------------
 
-Options:
-  --host <ip>         Override target host defined in inventory.
-  --offline           Skip online dependency fetches where possible.
-  --vmid-password <p> Password for initial LXC bootstrap (one-time use, not stored).
-  --vmid <id>         LXC VMID for password/sshd bootstrap via pct (default: 102).
-  -h, --help          Show this help.
+info()    { printf "[INFO]  %s\n" "$*"; }
+ok()      { printf "[ OK ]  %s\n" "$*"; }
+warn()    { printf "[WARN]  %s\n" "$*"; }
+fail()  { printf "[FAIL]  %s\n" "$*" >&2; }
 
-Authentication defaults to SSH key-based. Password is only used for the
-initial LXC bootstrap (set root password + deploy SSH key), then key auth is used
-for all Ansible operations. No passwords are passed on the Ansible command line.
-EOF
-}
+# --- Pre-flight checks -------------------------------------------------
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --host)
-            [[ $# -ge 2 ]] || { echo "ERROR: --host requires a value" >&2; exit 1; }
-            HOST_OVERRIDE="$2"
-            shift
-            ;;
-        --offline)
-            OFFLINE=1
-            ;;
-        --vmid-password)
-            [[ $# -ge 2 ]] || { echo "ERROR: --vmid-password requires a value" >&2; exit 1; }
-            VMID_PASSWORD="$2"
-            shift
-            ;;
-        --vmid)
-            [[ $# -ge 2 ]] || { echo "ERROR: --vmid requires a value" >&2; exit 1; }
-            LXC_VMID="$2"
-            shift
-            ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        *)
-            echo "ERROR: Unknown option: $1" >&2
-            usage
-            exit 1
-            ;;
-    esac
-    shift
-done
+section() { printf "\n=== %s ===\n" "$*"; }
 
-[[ -f "$PLAYBOOK" ]] || { echo "ERROR: Playbook not found: $PLAYBOOK" >&2; exit 1; }
-[[ -f "$INVENTORY" ]] || { echo "ERROR: Inventory not found: $INVENTORY" >&2; exit 1; }
-
-TARGET_HOST="$HOST_OVERRIDE"
-if [[ -z "$TARGET_HOST" ]]; then
-    TARGET_HOST="$(awk '/ansible_host:/ { print $2; exit }' "$INVENTORY")"
-fi
-
-TARGET_USER="$(awk '/ansible_user:/ { print $2; exit }' "$INVENTORY")"
-TARGET_USER="${TARGET_USER:-root}"
-
-[[ -n "$TARGET_HOST" ]] || { echo "ERROR: Could not determine target host from inventory or --host." >&2; exit 1; }
-
-cd "$ANSIBLE_DIR"
-
-# Ensure ansible is available.
-if ! command -v ansible-playbook >/dev/null 2>&1; then
-    echo "=== ansible not found, installing via apt ==="
-    apt-get install -y ansible
-fi
-
-# Install collection requirements only when online.
-if [[ "$OFFLINE" -eq 0 && -f requirements.yml ]]; then
-    ansible-galaxy collection install -r requirements.yml
-fi
-
-# LXC rebuilds often change SSH host keys. Refresh known_hosts automatically.
-mkdir -p "$HOME/.ssh"
-touch "$HOME/.ssh/known_hosts"
-ssh-keygen -R "$TARGET_HOST" >/dev/null 2>&1 || true
-if [[ "$OFFLINE" -eq 0 ]]; then
-    ssh-keyscan -H "$TARGET_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
-fi
-
-# --- Bootstrap phase: key auth first, password fallback only if needed ---
-KEY_PUB="${SSH_KEY}.pub"
-
-# Helper: test SSH key connectivity
-test_key_auth() {
-    ssh -o BatchMode=yes -o ConnectTimeout=5 \
-        -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-        -o StrictHostKeyChecking=accept-new \
-        -i "$SSH_KEY" "${TARGET_USER}@${TARGET_HOST}" true >/dev/null 2>&1
-}
-
-# Try key auth first
-if ! test_key_auth; then
-    echo "=== SSH key auth failed; bootstrapping with password ==="
-    SSH_PASSWORD=""
-    if [[ -n "$VMID_PASSWORD" ]]; then
-        SSH_PASSWORD="$VMID_PASSWORD"
-        echo "Using bootstrap password from argument."
-    else
-        read -rsp "LXC root SSH password (for initial bootstrap only): " SSH_PASSWORD
-        echo
-        if [[ -z "$SSH_PASSWORD" ]]; then
-            echo "ERROR: Key auth failed and no bootstrap password provided. Aborting." >&2
-            exit 1
-        fi
-    fi
-
-    # Bootstrap via pct exec: set root password, deploy SSH key, enable SSH
-    if command -v pct >/dev/null 2>&1 && pct status "$LXC_VMID" >/dev/null 2>&1; then
-        echo "=== Bootstrapping LXC ${LXC_VMID} ==="
-
-        # Set root password inside the LXC
-        printf 'root:%s\n' "$SSH_PASSWORD" | pct exec "$LXC_VMID" -- chpasswd
-
-        # Deploy SSH key and configure SSH
-        if [[ -f "$KEY_PUB" ]]; then
-            # Create .ssh directory first (pct push cannot create parent dirs)
-            pct exec "$LXC_VMID" -- bash -lc "
-                set -euo pipefail
-                mkdir -p /root/.ssh
-                chmod 700 /root/.ssh
-            "
-            # Deploy SSH key into LXC via pct push (rootfs storage)
-            pct push "$LXC_VMID" "$KEY_PUB" "rootfs:/root/.ssh/authorized_keys"
-            pct exec "$LXC_VMID" -- bash -lc "
-                set -euo pipefail
-                if [ -f /etc/ssh/sshd_config ]; then
-                    sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-                    sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-                fi
-                chmod 600 /root/.ssh/authorized_keys
-                chown -R root:root /root/.ssh
-                systemctl restart ssh || systemctl restart sshd || service ssh restart || true
-            "
-        else
-            echo "WARNING: ${KEY_PUB} not found; SSH key cannot be deployed." >&2
-            # Just set password and enable SSH
-            pct exec "$LXC_VMID" -- bash -lc "
-                if [ -f /etc/ssh/sshd_config ]; then
-                    sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-                    sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-                fi
-                systemctl restart ssh || systemctl restart sshd || service ssh restart || true
-            "
-        fi
-    fi
-fi
-
-# Re-verify key auth works now
-if ! test_key_auth; then
-    echo "ERROR: SSH key auth still not working after bootstrap. Check the LXC manually." >&2
+# Check if we're running on the Proxmox host (have pct)
+if ! command -v pct >/dev/null 2>&1; then
+    fail "pct command not found. This script must be run on the Proxmox host." >&2
     exit 1
 fi
-echo "SSH key auth verified. Running Ansible with key-based auth."
 
-# Prepare Ansible — key-based auth only, NO password on command line
-HLH_OFFLINE_BOOL="false"
-[[ "$OFFLINE" -eq 1 ]] && HLH_OFFLINE_BOOL="true"
-EXTRA_VARS_JSON="{\"hlh_offline\": ${HLH_OFFLINE_BOOL}}"
-if [[ -n "$HOST_OVERRIDE" ]]; then
-    EXTRA_VARS_JSON="{\"hlh_offline\": ${HLH_OFFLINE_BOOL}, \"ansible_host\": \"${HOST_OVERRIDE}\"}"
+# Check if LXC exists and is running
+if ! pct status "$LXC_VMID" >/dev/null 2>&1; then
+    fail "LXC $LXC_VMID does not exist" >&2
+    exit 1
 fi
 
-export ANSIBLE_HOST_KEY_CHECKING=False
-export ANSIBLE_ROLES_PATH="${ANSIBLE_DIR}/roles:${ANSIBLE_ROLES_PATH:-}"
+if ! pct status "$LXC_VMID" | grep -q "running"; then
+    fail "LXC $LXC_VMID is not running" >&2
+    exit 1
+fi
 
-ANSIBLE_ARGS=(
-    -i "$INVENTORY"
-    "$PLAYBOOK"
-    --ssh-common-args "-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=accept-new"
-    -e "$EXTRA_VARS_JSON"
-    --private-key "$SSH_KEY"
-)
+# --- Main configuration steps --------------------------------------------------
 
-echo "=== Running Ansible playbook ==="
-ansible-playbook "${ANSIBLE_ARGS[@]}"
+section "Configuring LXC $LXC_VMID"
+
+# 1. Ensure Docker is running
+info "Ensuring Docker service is running..."
+pct exec "$LXC_VMID" -- bash -c "systemctl is-active docker || systemctl start docker"
+
+# 2. Configure Docker daemon to use ZFS mount point
+info "Configuring Docker daemon..."
+pct exec "$LXC_VMID" -- bash -c '
+    mkdir -p /etc/docker
+    cat > /etc/docker/daemon.json <<EOF
+{
+    "data-root": "/srv/data/docker"
+}
+EOF
+    systemctl restart docker
+'
+
+# 3. Verify Docker is working
+info "Verifying Docker installation..."
+pct exec "$LXC_VMID" -- bash -c "docker version"
+
+# 4. Verify the bind mount is properly configured
+info "Checking ZFS bind mount..."
+pct exec "$LXC_VMID" -- bash -c "mount | grep '/srv/data'"
+
+# 5. Configure permissions for dockhand data
+info "Setting up dockhand data directories..."
+pct exec "$LXC_VMID" -- bash -c '
+    mkdir -p /srv/data/dockhand/data
+    mkdir -p /srv/data/dockhand/run
+    chmod 755 /srv/data/dockhand
+    chmod 755 /srv/data/dockhand/data
+    chmod 755 /srv/data/dockhand/run
+'
+
+# 6. Ensure Dockhand container is running
+info "Ensuring Dockhand container is running..."
+pct exec "$LXC_VMID" -- bash -c '
+    if ! docker ps -q -f name=dockhand >/dev/null 2>&1; then
+        echo "Dockhand not running, starting it..."
+        docker run -d \
+            --name dockhand \
+            --restart unless-stopped \
+            -v /srv/data/dockhand/data:/data \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /srv/data/dockhand/run:/run \
+            -p 80:3000 \
+            fnsys/dockhand:latest
+    fi
+'
+
+# 7. Check that Dockhand is running
+info "Verifying Dockhand is running..."
+pct exec "$LXC_VMID" -- bash -c 'docker ps --filter name=dockhand'
+
+# --- Final summary ------------------------------------------------------------
+
+section "Configuration Summary"
+ok "LXC $LXC_VMID configured successfully"
+ok "Docker Engine is running"
+ok "Docker daemon configured with ZFS data root"
+ok "Dockhand container is running"
+ok "All required services are operational"

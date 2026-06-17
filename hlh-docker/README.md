@@ -71,7 +71,7 @@ no OpenTofu.
 All settings are configurable via environment variables:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+|--------|---------|-----------|
 | `HLH_LXC_VMID` | 102 | Container ID |
 | `HLH_LXC_HOSTNAME` | hlh-docker | Container hostname |
 | `HLH_LXC_IP` | 192.168.1.13 | Container IP address |
@@ -113,11 +113,11 @@ Dockhand + LazyDocker, ZFS storage, VLAN-aware networking.
 ```
 hlh-docker/
 ├── deploy-hlh-docker.sh          # Pure-bash deploy: LXC + Docker + Dockhand
-├── configure-hlh-docker.sh       # Standalone configuration helper
+├── configure-hlh-docker.sh       # Pure-bash configuration helper
 ├── ADR-001.md                    # Architecture Decision Record
 ├── ADR-002.md                    # Architecture Decision Record
 ├── 00_BACKLOG.md                 # Backlog / ideas
-├── 10_ACTIVE.md                  # Active work items
+├── 10_ACTIVE.md              # Active work items
 ├── 90_DONE.md                    | Completed items
 ├── 98_README.md                  | Working notes
 ├── CHANGELOG.md                  | Version history
