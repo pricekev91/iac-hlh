@@ -1,0 +1,4 @@
+# /home/pricekev/git/iac-hlh/ct/technitium
+version: '3.8'
+services:
+  # Add services for /home/pricekev/git/iac-hlh/ct/technitium here

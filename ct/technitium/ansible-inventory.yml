@@ -1,4 +1,4 @@
-# /home/pricekev/git/iac-hlh/ct/openspeedtest
+# /home/pricekev/git/iac-hlh/ct/technitium
 all:
   hosts:
     localhost:

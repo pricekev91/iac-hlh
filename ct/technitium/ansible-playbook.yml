@@ -1,0 +1,7 @@
+# /home/pricekev/git/iac-hlh/ct/technitium
+---
+- hosts: localhost
+  tasks:
+    - name: Deploy /home/pricekev/git/iac-hlh/ct/technitium
+      debug:
+        msg: "Deploying /home/pricekev/git/iac-hlh/ct/technitium"

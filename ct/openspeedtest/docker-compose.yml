@@ -1,10 +1,4 @@
----
+# /home/pricekev/git/iac-hlh/ct/openspeedtest
+version: '3.8'
 services:
-  openspeedtest:
-    image: openspeedtest/latest
-    container_name: openspeedtest
-    restart: unless-stopped
-    ports:
-      - "192.168.1.20:80:80"
-    environment:
-      - MODE=standalone
+  # Add services for /home/pricekev/git/iac-hlh/ct/openspeedtest here
