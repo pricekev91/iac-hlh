@@ -20,7 +20,7 @@
 set -euo pipefail
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
-LXC_ID=102
+LXC_ID=121
 MODEL_DIR="/srv/ai/models"
 LLAMA_CPP_REPO="https://github.com/ggerganov/llama.cpp.git"
 LLAMA_CPP_DIR="/opt/llama.cpp"

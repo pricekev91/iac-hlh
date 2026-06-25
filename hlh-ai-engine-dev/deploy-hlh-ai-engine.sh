@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 # Change these defaults to match your environment.
-LXC_ID=102
+LXC_ID=121
 LXC_NAME="hlh-ai-engine-dev"
 LXC_HOSTNAME="hlh-ai-engine-dev"
 LXC_IMAGE="local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
