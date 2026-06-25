@@ -84,20 +84,20 @@ apt-get install -y --no-install-recommends \
   python3 python3-pip curl wget unzip \
   libopenblas-dev libssl-dev ca-certificates gnupg
 
-# ROCm repository
-echo "[1/7] Adding ROCm ${ROCM_VERSION} repository..."
-mkdir -p /etc/apt/keyrings
-wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | \
-  gpg --dearmor | tee /etc/apt/keyrings/rocm.gpg > /dev/null
+# Remove ALL Ubuntu ROCm packages that conflict with AMD repo versions
+apt-get remove -y --purge 'rocminfo*' 'rocm-cmake*' 'hipcc*' 'rocm-libs*' 2>/dev/null || true
 
-tee /etc/apt/sources.list.d/rocm.list <<'ROCMEOF'
-deb [arch=amd64 trusted=yes] https://repo.radeon.com/rocm/apt/7.2.3 noble main
-deb [arch=amd64 trusted=yes] https://repo.radeon.com/graphics/7.2.3/ubuntu noble main
+# ROCm repository — use proper GPG key import per AMD docs
+echo "[1/7] Adding ROCm ${ROCM_VERSION} repository..."
+mkdir -p /usr/share/keyrings
+wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | \
+  gpg --dearmor -o /usr/share/keyrings/rocm-archive-keyring.gpg
+
+tee /etc/apt/sources.list.d/rocm.list <<ROCMEOF
+deb [arch=amd64 signed-by=/usr/share/keyrings/rocm-archive-keyring.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} noble main
+deb [arch=amd64 signed-by=/usr/share/keyrings/rocm-archive-keyring.gpg] https://repo.radeon.com/graphics/${ROCM_VERSION}/ubuntu noble main
 ROCMEOF
 
-echo 'APT::Key::GPGCommand "/usr/bin/gpg";' > /etc/apt/apt.conf.d/99gpg-override
-
-apt-get remove -y rocminfo 2>/dev/null || true
 apt-get update
 
 apt-get install -y --no-install-recommends \
