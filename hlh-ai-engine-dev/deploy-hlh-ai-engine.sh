@@ -12,7 +12,7 @@
 #   2. Create privileged Ubuntu LXC container
 #   3. Add GPU/ROCm passthrough devices
 #   4. Start the container
-#   5. Report completion — next step: run configure-hlh-ai-engine.sh
+#   5. Chain to configure — installs ROCm, builds llama.cpp, starts service
 
 set -euo pipefail
 
@@ -100,14 +100,5 @@ echo "[4/5] Starting LXC ${LXC_ID} (${LXC_NAME})..."
 pct start "${LXC_ID}"
 sleep 5
 
-echo "[5/5] Deployment complete."
-echo ""
-echo "  Container ID   : ${LXC_ID}"
-echo "  Hostname       : ${LXC_HOSTNAME}"
-echo "  IP address     : ${LXC_IP%/*}"
-echo "  Model storage  : ${MODEL_DIR} (host) <-> /srv/ai/models (container)"
-echo "  Next step      : ./configure-hlh-ai-engine.sh"
-echo ""
-echo "  After configuration, llama-server will be available at:"
-echo "    Dev  : http://${LXC_IP%/*}:80"
-echo "    Prod : http://192.168.1.12:80"
+echo "[5/5] Container ready — running configure..."
+bash "${SCRIPT_DIR}/configure-hlh-ai-engine.sh"
