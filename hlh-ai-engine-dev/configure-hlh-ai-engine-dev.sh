@@ -77,12 +77,14 @@ ROCM_PATH="/opt/rocm"
 GFX_VERSION="11.5.0"
 
 # Base dependencies
-echo "[1/7] Installing base dependencies..."
+# Base dependencies + Vulkan (for GPU inference alongside ROCm)
 apt-get update
 apt-get install -y --no-install-recommends \
   build-essential git cmake pkg-config \
   python3 python3-pip curl wget unzip \
-  libopenblas-dev libssl-dev ca-certificates gnupg
+  libopenblas-dev libssl-dev ca-certificates gnupg \
+  vulkan-loader amdvlk vulkan-validationlayers \
+  glslc rocm-vulkan
 
 # Remove ALL Ubuntu ROCm packages that conflict with AMD repo versions
 apt-get remove -y --purge 'rocminfo*' 'rocm-cmake*' 'hipcc*' 'rocm-libs*' 'rocm*' 2>/dev/null || true
@@ -155,7 +157,7 @@ cd "$LLAMA_CPP_DIR"
 HIPCXX="${HIPCXX_PATH:-$(hipconfig -l)/clang}" HIP_PATH="${HIP_PATH_VAL:-/opt/rocm}" \
 cmake -S . -B build \
   -DGGML_HIP=ON \
-  -DGGML_VULKAN=OFF \
+  -DGGML_VULKAN=ON \
   -DAMDGPU_TARGETS=gfx1150 \
   -DCMAKE_BUILD_TYPE=Release
 
