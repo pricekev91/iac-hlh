@@ -85,7 +85,16 @@ apt-get install -y --no-install-recommends \
   libopenblas-dev libssl-dev ca-certificates gnupg
 
 # Remove ALL Ubuntu ROCm packages that conflict with AMD repo versions
-apt-get remove -y --purge 'rocminfo*' 'rocm-cmake*' 'hipcc*' 'rocm-libs*' 2>/dev/null || true
+apt-get remove -y --purge 'rocminfo*' 'rocm-cmake*' 'hipcc*' 'rocm-libs*' 'rocm*' 2>/dev/null || true
+apt-get autoremove -y
+
+# Pin the AMD ROCm repo above Ubuntu's default so apt always prefers it
+mkdir -p /etc/apt/preferences.d
+tee /etc/apt/preferences.d/rocm <<'PINEOF'
+Package: *
+Pin: origin "repo.radeon.com"
+Pin-Priority: 1001
+PINEOF
 
 # ROCm repository — use proper GPG key import per AMD docs
 echo "[1/7] Adding ROCm ${ROCM_VERSION} repository..."
