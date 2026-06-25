@@ -31,7 +31,7 @@ ROCM_VERSION="7.2.3"
 ROCM_PATH="/opt/rocm"
 DEFAULT_MODEL_URL="https://huggingface.co/bartowski/Qwen2.5-Coder-32B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
 DEFAULT_MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-LLAMA_PORT=8081            # dev port — prod uses 80
+LLAMA_PORT=80            # dev port — prod uses 80
 
 # ─── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -219,7 +219,7 @@ Environment=ROCM_PATH=/opt/rocm
 Environment=HIP_PATH=/opt/rocm
 ExecStart=/opt/llama.cpp/build/bin/llama-server \
   --model /srv/ai/models/${ACTIVE_MODEL} \
-  --host 0.0.0.0 --port 8081 \
+  --host 0.0.0.0 --port 80 \
   --ctx-size 4096 \
   -ngl 48 \
   --batch-size 128 \
@@ -261,7 +261,7 @@ rewrite_execstart() {
       done=1
       print "ExecStart=/opt/llama.cpp/build/bin/llama-server \\"
       print "  --model " model " \\"
-      print "  --host 0.0.0.0 --port 8081 \\"
+      print "  --host 0.0.0.0 --port 80 \\"
       print "  --ctx-size " ctx " \\"
       print "  -ngl 48 \\"
       print "  --batch-size 128 \\"
@@ -397,7 +397,7 @@ if systemctl is-active --quiet "$SERVICE"; then
   echo "  [✓] MTP mode    : $NEW_MTP"
   echo "  [✓] Service     : $SERVICE running"
   echo ""
-  echo "  Web UI ready at : http://$(hostname -I | awk '{print $1}'):8081"
+  echo "  Web UI ready at : http://$(hostname -I | awk '{print $1}'):80"
   echo "  Verify VRAM     : rocm-smi"
   echo "  Watch logs      : journalctl -u $SERVICE -f"
 else
@@ -437,7 +437,7 @@ echo "============================================"
 echo ""
 echo "  Container  : LXC ${LXC_ID}"
 echo "  Model dir  : ${MODEL_DIR} (shared with prod)"
-echo "  llama-server: http://192.168.1.21:8081"
+echo "  llama-server: http://192.168.1.21:80"
 echo "  Switch model: switch-model.sh (run inside container)"
 echo "  GPU        : gfx1150 (AMD Radeon 890M)"
 echo "  ROCm       : ${ROCM_VERSION}"
