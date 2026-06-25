@@ -245,6 +245,15 @@ SYSTEMD_SERVICE="/etc/systemd/system/${SERVICE}.service"
 SWITCH_SCRIPT="/usr/local/bin/switch-model.sh"
 MTP_DRAFT_N_MAX="${MTP_DRAFT_N_MAX:-3}"
 
+# Detect interactive vs non-interactive (deploy script has no TTY)
+if [ -t 0 ]; then
+  INTERACTIVE=1
+  echo "  [interactive] Running in interactive mode"
+else
+  INTERACTIVE=0
+  echo "  [non-interactive] Running in automated mode — using defaults"
+fi
+
 is_mtp_model() {
   [[ "$(basename "$1")" =~ [Mm][Tt][Pp] ]]
 }
@@ -303,60 +312,80 @@ if [ "${#MODELS[@]}" -eq 0 ]; then
   exit 1
 fi
 
-echo "Available models:"
-for i in "${!MODELS[@]}"; do
-  if is_mtp_model "${MODELS[$i]}"; then
-    printf "  %2d) %s  [MTP]\n" $((i+1)) "${MODELS[$i]}"
-  else
-    printf "  %2d) %s\n" $((i+1)) "${MODELS[$i]}"
+if [ "$INTERACTIVE" -eq 1 ]; then
+  echo "Available models:"
+  for i in "${!MODELS[@]}"; do
+    if is_mtp_model "${MODELS[$i]}"; then
+      printf "  %2d) %s  [MTP]\n" $((i+1)) "${MODELS[$i]}"
+    else
+      printf "  %2d) %s\n" $((i+1)) "${MODELS[$i]}"
+    fi
+  done
+
+  read -rp "Select model number to activate: " CHOICE
+  if ! [[ "$CHOICE" =~ ^[0-9]+$ ]] || (( CHOICE < 1 || CHOICE > ${#MODELS[@]} )); then
+    echo "Invalid selection."
+    exit 1
   fi
-done
-
-read -rp "Select model number to activate: " CHOICE
-if ! [[ "$CHOICE" =~ ^[0-9]+$ ]] || (( CHOICE < 1 || CHOICE > ${#MODELS[@]} )); then
-  echo "Invalid selection."
-  exit 1
+  NEW_MODEL="${MODELS[$((CHOICE-1))]}"
+else
+  # Non-interactive: pick first non-MTP model, or first model if all MTP
+  NEW_MODEL=""
+  for m in "${MODELS[@]}"; do
+    if ! is_mtp_model "$m"; then
+      NEW_MODEL="$m"
+      break
+    fi
+  done
+  [ -z "$NEW_MODEL" ] && NEW_MODEL="${MODELS[0]}"
 fi
-NEW_MODEL="${MODELS[$((CHOICE-1))]}"
 
-echo ""
-echo "Context size options:"
-echo "   1) 98304  (96K)  — maximum long-context"
-echo "   2) 73728  (72K)  — extended long-context"
-echo "   3) 65536  (64K)  — full long-context"
-echo "   4) 32768  (32K)  — half, saves ~50% KV VRAM"
-echo "   5) 16384  (16K)  — quarter, minimal KV usage"
-echo "   6)  8192   (8K)  — minimal, maximum VRAM headroom"
-echo "   7) Custom         — enter manually"
+if [ "$INTERACTIVE" -eq 1 ]; then
+  echo ""
+  echo "Context size options:"
+  echo "   1) 98304  (96K)  — maximum long-context"
+  echo "   2) 73728  (72K)  — extended long-context"
+  echo "   3) 65536  (64K)  — full long-context"
+  echo "   4) 32768  (32K)  — half, saves ~50% KV VRAM"
+  echo "   5) 16384  (16K)  — quarter, minimal KV usage"
+  echo "   6)  8192   (8K)  — minimal, maximum VRAM headroom"
+  echo "   7) Custom         — enter manually"
 
-read -rp "Select context size [default: 65536]: " CTX_CHOICE
-case "${CTX_CHOICE:-3}" in
-  1) NEW_CTX=98304  ;;
-  2) NEW_CTX=73728  ;;
-  3) NEW_CTX=65536  ;;
-  4) NEW_CTX=32768  ;;
-  5) NEW_CTX=16384  ;;
-  6) NEW_CTX=8192   ;;
-  7)
-    read -rp "Enter custom ctx-size: " NEW_CTX
-    if ! [[ "$NEW_CTX" =~ ^[0-9]+$ ]]; then echo "Invalid ctx-size."; exit 1; fi
-    ;;
-  *) NEW_CTX=65536 ;;
-esac
+  read -rp "Select context size [default: 65536]: " CTX_CHOICE
+  case "${CTX_CHOICE:-3}" in
+    1) NEW_CTX=98304  ;;
+    2) NEW_CTX=73728  ;;
+    3) NEW_CTX=65536  ;;
+    4) NEW_CTX=32768  ;;
+    5) NEW_CTX=16384  ;;
+    6) NEW_CTX=8192   ;;
+    7)
+      read -rp "Enter custom ctx-size: " NEW_CTX
+      if ! [[ "$NEW_CTX" =~ ^[0-9]+$ ]]; then echo "Invalid ctx-size."; exit 1; fi
+      ;;
+    *) NEW_CTX=65536 ;;
+  esac
+else
+  NEW_CTX=65536
+fi
 
-echo ""
-echo "KV cache quantization (applies to both K and V cache):"
-echo "   1) q8_0  — highest quality, ~2x VRAM vs q4"
-echo "   2) q6_0  — very good quality, ~1.5x VRAM vs q4"
-echo "   3) q4_0  — recommended, lowest VRAM, minimal quality loss"
+if [ "$INTERACTIVE" -eq 1 ]; then
+  echo ""
+  echo "KV cache quantization (applies to both K and V cache):"
+  echo "   1) q8_0  — highest quality, ~2x VRAM vs q4"
+  echo "   2) q6_0  — very good quality, ~1.5x VRAM vs q4"
+  echo "   3) q4_0  — recommended, lowest VRAM, minimal quality loss"
 
-read -rp "Select KV cache quant [default: q4_0]: " KV_CHOICE
-case "${KV_CHOICE:-3}" in
-  1) NEW_KV="q8_0" ;;
-  2) NEW_KV="q6_0" ;;
-  3) NEW_KV="q4_0" ;;
-  *) NEW_KV="q4_0" ;;
-esac
+  read -rp "Select KV cache quant [default: q4_0]: " KV_CHOICE
+  case "${KV_CHOICE:-3}" in
+    1) NEW_KV="q8_0" ;;
+    2) NEW_KV="q6_0" ;;
+    3) NEW_KV="q4_0" ;;
+    *) NEW_KV="q4_0" ;;
+  esac
+else
+  NEW_KV="q4_0"
+fi
 
 if is_mtp_model "$NEW_MODEL"; then
   NEW_MTP="yes"
@@ -366,16 +395,24 @@ else
   MTP_INFO="(none)"
 fi
 
-echo ""
-echo "  New model   : $NEW_MODEL"
-echo "  ctx-size    : $NEW_CTX"
-echo "  KV cache    : $NEW_KV (K and V)"
-echo "  MTP mode    : $NEW_MTP  $MTP_INFO"
-echo ""
-read -rp "Apply and restart $SERVICE? [y/N]: " CONFIRM
-if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-  echo "Aborted."
-  exit 0
+if [ "$INTERACTIVE" -eq 1 ]; then
+  echo ""
+  echo "  New model   : $NEW_MODEL"
+  echo "  ctx-size    : $NEW_CTX"
+  echo "  KV cache    : $NEW_KV (K and V)"
+  echo "  MTP mode    : $NEW_MTP  $MTP_INFO"
+  echo ""
+  read -rp "Apply and restart $SERVICE? [y/N]: " CONFIRM
+  if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+else
+  echo "  New model   : $NEW_MODEL"
+  echo "  ctx-size    : $NEW_CTX"
+  echo "  KV cache    : $NEW_KV (K and V)"
+  echo "  MTP mode    : $NEW_MTP"
+  echo ""
 fi
 
 is_mtp_model "$NEW_MODEL" && NEW_MTP_FLAG="1" || NEW_MTP_FLAG="0"

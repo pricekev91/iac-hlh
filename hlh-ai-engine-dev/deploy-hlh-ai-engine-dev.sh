@@ -101,4 +101,4 @@ pct start "${LXC_ID}"
 sleep 5
 
 echo "[5/5] Container ready — running configure..."
-bash "${SCRIPT_DIR}/configure-hlh-ai-engine.sh"
+bash "${SCRIPT_DIR}/configure-hlh-ai-engine-dev.sh"
