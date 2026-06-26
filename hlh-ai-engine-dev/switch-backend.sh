@@ -127,7 +127,7 @@ if [ "$CHOICE" -gt 0 ] 2>/dev/null && [ "$CHOICE" -le "${#MODELS[@]}" ]; then
   echo "   1) 98304  (96K)  — maximum long-context"
   echo "   2) 73728  (72K)  — extended long-context"
   echo "   3) 65536  (64K)  — full long-context"
-  echo "   4) 32768  (32K)  — half, saves ~50% KV VRAM"
+  echo "   4) 32728  (32K)  — half, saves ~50% KV VRAM"
   echo "   5) 16384  (16K)  — quarter, minimal KV usage"
   echo "   6)  8192   (8K)  — minimal, maximum VRAM headroom"
   echo "   7) Custom"
@@ -135,10 +135,10 @@ if [ "$CHOICE" -gt 0 ] 2>/dev/null && [ "$CHOICE" -le "${#MODELS[@]}" ]; then
   read -rp "Select context size [default: 65536]: " CTX_CHOICE
   case "${CTX_CHOICE:-3}" in
     1) NEW_CTX=98304  ;;
-    2) NEW_CTX=73728  ;;
-    3) NEW_CTX=65536  ;;
-    4) NEW_CTX=32768  ;;
-    5) NEW_CTX=16384  ;;
+    2) NEW_CTX=73728 ;;
+    3) NEW_CTX=65536 ;;
+    4) NEW_CTX=32768 ;;
+    5) NEW_CTX=16384 ;;
     6) NEW_CTX=8192   ;;
     7)
       read -rp "Enter custom ctx-size: " NEW_CTX

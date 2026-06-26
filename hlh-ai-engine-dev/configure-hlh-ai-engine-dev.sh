@@ -293,7 +293,7 @@ EOF
 
 # ─── 8. Deploy switch script ──────────────────────────────────────────────────
 echo "[8/10] Deploying switch-backend.sh..."
-pct push "${LXC_ID}" switch-backend.sh /usr/local/bin/switch-backend.sh 0
+pct push "${LXC_ID}" switch-backend.sh /usr/local/bin/switch-backend.sh
 pct exec "${LXC_ID}" -- bash -c "chmod +x /usr/local/bin/switch-backend.sh"
 echo "  Switch script installed at: /usr/local/bin/switch-backend.sh"
 
