@@ -1,23 +1,5 @@
 #!/usr/bin/env bash
-# configure-hlh-ai-engine-dev.sh
-# Bootstraps Vulkan deps + llama.cpp Vulkan build + systemd service
-# inside a running privileged LXC.
-#
-# Usage:
-#   ./configure-hlh-ai-engine-dev.sh
-#
-# This script must be run on the Proxmox host (pct command required).
-# The target LXC must already exist and be running (deploy first).
-#
-# Steps:
-#   1. Install base dependencies + Vulkan runtime
-#   2. Clone llama.cpp
-#   3. Build llama.cpp with Vulkan
-#   4. Create symlink: /opt/llama.cpp/bin/vulkan -> build_vulkan/bin/llama-server
-#   5. Set up model directory, download default model if empty
-#   6. Create systemd service for llama-server
-#   7. Enable and start the service
-#   8. Verify everything is running
+# Updated configure script for Vulkan support on AMD HX 370 with 890M iGPU
 
 set -euo pipefail
 
@@ -77,7 +59,7 @@ apt-get install -y --no-install-recommends \
   build-essential git cmake pkg-config \
   python3 python3-pip curl wget unzip \
   ca-certificates \
-  libvulkan-dev vulkan-tools glslc glslang-tools spirv-tools
+  libvulkan-dev spirv-headers vulkan-tools glslc glslang-tools spirv-tools
 
 # Add root to render group for GPU access
 usermod -aG render root
@@ -123,6 +105,7 @@ rm -rf build_vulkan
 cmake -S . -B build_vulkan \
   -DGGML_HIP=OFF \
   -DGGML_VULKAN=ON \
+  -DGGML_VULKAN_HOST=ON \
   -DCMAKE_BUILD_TYPE=Release
 
 echo "Vulkan build: Building... (5-15 min on 12 cores)"
@@ -142,7 +125,7 @@ ln -sf /opt/llama.cpp/build_vulkan/bin/llama-server /opt/llama.cpp/bin/vulkan
 echo "vulkan   -> $(readlink -f /opt/llama.cpp/bin/vulkan)"
 '
 
-# ─── 5. Set up models ─────────────────────────────────────────────────────────
+# ─── 5. Set up models ─────────────────────────────────────────────────
 echo "[5/8] Setting up model directory..."
 pct exec "${LXC_ID}" -- bash -c '
 set -euo pipefail
@@ -153,6 +136,7 @@ DEFAULT_MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
 
 mkdir -p "$MODEL_DIR"
 
+# Select model - prioritize specific model files
 ACTIVE_MODEL_FILE=""
 if [ -f "${MODEL_DIR}/${DEFAULT_MODEL_FILE}" ]; then
   ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
@@ -188,6 +172,7 @@ set -euo pipefail
 ACTIVE_MODEL=$(grep -oP "ACTIVE_MODEL=\K.*" /etc/ai-engine.env 2>/dev/null || echo "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf")
 DEFAULT_BACKEND=$(grep -oP "DEFAULT_BACKEND=\K.*" /etc/ai-engine.env 2>/dev/null || echo "vulkan")
 
+# For AMD GPU with 890M, use appropriate ngl parameter and backend
 tee /etc/systemd/system/ai-engine.service <<EOF
 [Unit]
 Description=llama.cpp AI Engine - llama-server
@@ -206,7 +191,8 @@ ExecStart=/opt/llama.cpp/bin/${DEFAULT_BACKEND} \
   --batch-size 128 \
   --parallel 1 \
   --cache-type-k q4_0 \
-  --cache-type-v q4_0
+  --cache-type-v q4_0 \
+  --backend vulkan
 Restart=on-failure
 RestartSec=10
 User=root
