@@ -77,7 +77,7 @@ apt-get install -y --no-install-recommends \
   build-essential git cmake pkg-config \
   python3 python3-pip curl wget unzip \
   ca-certificates \
-  vulkan-tools glslc glslang-tools spirv-tools
+  libvulkan-dev vulkan-tools glslc glslang-tools spirv-tools
 
 # Add root to render group for GPU access
 usermod -aG render root
