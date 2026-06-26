@@ -1,7 +1,0 @@
-# /home/pricekev/git/iac-hlh/ct/openspeedtest
----
-- hosts: localhost
-  tasks:
-    - name: Deploy /home/pricekev/git/iac-hlh/ct/openspeedtest
-      debug:
-        msg: "Deploying /home/pricekev/git/iac-hlh/ct/openspeedtest"

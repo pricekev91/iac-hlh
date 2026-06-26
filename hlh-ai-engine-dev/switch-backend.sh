@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# switch-backend.sh — Interactive backend + model switcher for llama.cpp AI engine
+# switch-backend.sh — Model switcher for llama.cpp AI engine (Vulkan)
 #
-# Toggles between HIP and Vulkan builds, then optionally switches models.
+# Only switches models and config — backend is Vulkan only.
 set -euo pipefail
 
 MODEL_DIR="/srv/ai/models"
@@ -61,47 +61,16 @@ update_execstart() {
 }
 
 echo "╔══════════════════════════════════════════╗"
-echo "║   llama.cpp Backend + Model Switcher     ║"
+echo "║   llama.cpp Model Switcher (Vulkan)      ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
-# Read current backend from the service file
-current_backend_name=$(grep -oP 'ExecStart=/opt/llama\.cpp/bin/(\S+)' "$SYSTEMD_SERVICE" 2>/dev/null | grep -oP 'bin/\K\w+' || echo "hip")
 current_model=$(grep -oP '\-\-model \K/[^ ]+' "$SYSTEMD_SERVICE" 2>/dev/null || echo "unknown")
-echo "Current backend : ${current_backend_name}"
 echo "Current model   : ${current_model##*/}"
+echo "Backend         : vulkan (fixed)"
 echo ""
 
-# ─── Step 1: Backend selection ────────────────────────────────────────────────
-echo "Backend options:"
-echo "  1) hip      — AMD ROCm (native AMD GPU compute)"
-echo "  2) vulkan   — Vulkan (cross-platform GPU)"
-echo ""
-
-read -rp "Select backend [default: ${current_backend_name}]: " BACKEND_CHOICE
-case "${BACKEND_CHOICE:-$current_backend_name}" in
-  hip|1)    NEW_BACKEND_NAME="hip" ;;
-  vulkan|2) NEW_BACKEND_NAME="vulkan" ;;
-  *)
-    echo "Invalid backend."
-    exit 1
-    ;;
-esac
-
-NEW_BACKEND_BIN="${BIN_DIR}/${NEW_BACKEND_NAME}"
-
-if [ "$NEW_BACKEND_NAME" = "$current_backend_name" ]; then
-  echo "Already using backend: ${NEW_BACKEND_NAME}"
-else
-  echo "Switching backend: ${current_backend_name} → ${NEW_BACKEND_NAME}"
-
-  # Update env file for persistency
-  sed -i "s/^DEFAULT_BACKEND=.*/DEFAULT_BACKEND=${NEW_BACKEND_NAME}/" "$ENV_FILE"
-fi
-
-echo ""
-
-# ─── Step 2: Model selection ──────────────────────────────────────────────────
+# ─── Model selection ──────────────────────────────────────────────────────────
 mapfile -t MODELS < <(find "$MODEL_DIR" -maxdepth 1 -type f -name '*.gguf' | sort)
 if [ "${#MODELS[@]}" -eq 0 ]; then
   echo "No .gguf models found in $MODEL_DIR."
@@ -166,7 +135,6 @@ if [ "$CHOICE" -gt 0 ] 2>/dev/null && [ "$CHOICE" -le "${#MODELS[@]}" ]; then
   is_mtp_model "$NEW_MODEL" && NEW_MTP_FLAG="1" || NEW_MTP_FLAG="0"
 
   echo ""
-  echo "  New backend : ${NEW_BACKEND_NAME}"
   echo "  New model   : ${NEW_MODEL##*/}"
   echo "  ctx-size    : ${NEW_CTX}"
   echo "  KV cache    : ${NEW_KV} (K and V)"
@@ -178,7 +146,7 @@ if [ "$CHOICE" -gt 0 ] 2>/dev/null && [ "$CHOICE" -le "${#MODELS[@]}" ]; then
     exit 0
   fi
 
-  update_execstart "$NEW_BACKEND_BIN" "$NEW_MODEL" "$NEW_CTX" "$NEW_KV" "$NEW_MTP_FLAG"
+  update_execstart "${BIN_DIR}/vulkan" "$NEW_MODEL" "$NEW_CTX" "$NEW_KV" "$NEW_MTP_FLAG"
 else
   echo "Skipping model switch (keeping current)."
 fi
@@ -195,12 +163,10 @@ for i in {1..15}; do
 done
 
 if systemctl is-active --quiet "$SERVICE"; then
-  echo "  [✓] Backend     : ${NEW_BACKEND_NAME}"
   [ "$CHOICE" -gt 0 ] 2>/dev/null && echo "  [✓] Model       : ${NEW_MODEL##*/}"
   echo "  [✓] Service     : ${SERVICE} running"
   echo ""
   echo "  Web UI ready at : http://$(hostname -I | awk '{print $1}'):80"
-  echo "  Verify VRAM     : rocm-smi"
   echo "  Watch logs      : journalctl -u ${SERVICE} -f"
 else
   echo "  [✗] WARNING: ${SERVICE} did not start cleanly!"

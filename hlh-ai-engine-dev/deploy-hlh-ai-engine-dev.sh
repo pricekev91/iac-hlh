@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# deploy-hlh-ai-engine.sh
-# Creates a privileged Ubuntu LXC on Proxmox with GPU passthrough for llama.cpp ROCm inference.
+# deploy-hlh-ai-engine-dev.sh
+# Creates a privileged Ubuntu LXC on Proxmox with GPU passthrough for llama.cpp Vulkan inference.
 #
 # Usage:
-#   ./deploy-hlh-ai-engine.sh
+#   ./deploy-hlh-ai-engine-dev.sh
 #
 # This script must be run on the Proxmox host (pct command required).
 #
 # Steps:
 #   1. Create model storage directory on the ZFS pool
 #   2. Create privileged Ubuntu LXC container
-#   3. Add GPU/ROCm passthrough devices
+#   3. Add GPU/DRI/KFD passthrough devices
 #   4. Start the container
-#   5. Chain to configure — installs ROCm, builds llama.cpp, starts service
+#   5. Chain to configure — installs Vulkan, builds llama.cpp, starts service
 
 set -euo pipefail
 

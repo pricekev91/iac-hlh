@@ -1,7 +1,0 @@
-# /home/pricekev/git/iac-hlh/ct/litellm
----
-- hosts: localhost
-  tasks:
-    - name: Deploy /home/pricekev/git/iac-hlh/ct/litellm
-      debug:
-        msg: "Deploying /home/pricekev/git/iac-hlh/ct/litellm"
