@@ -100,5 +100,8 @@ echo "[4/5] Starting LXC ${LXC_ID} (${LXC_NAME})..."
 pct start "${LXC_ID}"
 sleep 5
 
-echo "[5/5] Container ready — running configure..."
+echo "[5/6] Container ready — deploying switch script..."
+bash "${SCRIPT_DIR}/deploy-switch.sh"
+
+echo "[6/6] Container ready — running configure..."
 bash "${SCRIPT_DIR}/configure-hlh-ai-engine-dev.sh"
