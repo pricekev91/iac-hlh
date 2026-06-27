@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # configure-hlh-ai-engine-dev.sh
-# Version: 2.1.0
+# Version: 2.1.1
 # Description: Bootstrap llama.cpp AI engine on Ubuntu 24.04 LXC with Vulkan backend
 # Target: CT 121 — Vulkan benchmark of same model as CT 101 (PROD/ROCm)
 # Key difference from CT 101: Vulkan (RADV) instead of ROCm
@@ -10,6 +10,7 @@
 # Vulkan ICD files (radeon_icd.json) are installed by mesa-vulkan-drivers inside container
 #
 # Changelog:
+#   2.1.1 - Fixed GGML_VULKAN_HOST=OFF to avoid glslc dependency (pre-compiled SPIR-V shaders)
 #   2.1.0 - Added container deployment and GPU passthrough
 #   2.0.0 - Match CT 101 config: 96K ctx, MTP (draft-mtp, n-max=2),
 #           batch 512, flash-attn, port 80, Qwen3.6-35B-A3B-MTP-Q4_K_M
@@ -79,8 +80,7 @@ apt-get install -y --no-install-recommends \
   python3 python3-pip curl wget unzip \
   ca-certificates gnupg \
   libvulkan-dev vulkan-tools \
-  mesa-vulkan-drivers \
-  glslang-tools spirv-tools
+  mesa-vulkan-drivers
 
 # Add root to render and video groups for GPU access
 usermod -aG render root
@@ -126,7 +126,7 @@ rm -rf build_vulkan
 cmake -S . -B build_vulkan \
   -DGGML_HIP=OFF \
   -DGGML_VULKAN=ON \
-  -DGGML_VULKAN_HOST=ON \
+  -DGGML_VULKAN_HOST=OFF \
   -DCMAKE_BUILD_TYPE=Release
 
 echo "Vulkan build: Building... (5-15 min on 12 cores)"
