@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # configure-hlh-ai-engine-dev.sh
-# Version: 2.0.0
+# Version: 2.1.0
 # Description: Bootstrap llama.cpp AI engine on Ubuntu 24.04 LXC with Vulkan backend
 # Target: CT 121 — Vulkan benchmark of same model as CT 101 (PROD/ROCm)
 # Key difference from CT 101: Vulkan (RADV) instead of ROCm
 # All other params match CT 101 exactly for fair comparison
 #
+# Requires: prox01 host, GPU passthrough configured for CT 121
+# Vulkan ICD files (radeon_icd.json) are installed by mesa-vulkan-drivers inside container
+#
 # Changelog:
+#   2.1.0 - Added container deployment and GPU passthrough
 #   2.0.0 - Match CT 101 config: 96K ctx, MTP (draft-mtp, n-max=2),
 #           batch 512, flash-attn, port 80, Qwen3.6-35B-A3B-MTP-Q4_K_M
 #           Fixed: VK_ICD_FILENAMES (radeon_icd.json, not radeon_icd64.json)
@@ -52,16 +56,32 @@ done
 # ─── Pre-flight ────────────────────────────────────────────────────────────────
 command -v pct >/dev/null 2>&1 || { echo "ERROR: pct command not found. Run on Proxmox host." >&2; exit 1; }
 
-pct status "${LXC_ID}" >/dev/null 2>&1 || {
-    echo "ERROR: LXC ${LXC_ID} is not running. Deploy it first." >&2
-    exit 1
-}
+if pct status "${LXC_ID}" >/dev/null 2>&1; then
+    echo "LXC ${LXC_ID} is running."
+else
+    echo "LXC ${LXC_ID} is not running or does not exist. Deploying..."
+    pct create "${LXC_ID}" /var/lib/vz/template/cache/ubuntu-24.04-standard_24.04-1_amd64.tar.zst
+    pct start "${LXC_ID}"
+    sleep 10
+    echo "Waiting for container to be ready..."
+    until pct status "${LXC_ID}" >/dev/null 2>&1; do
+        sleep 5
+    done
+    echo "Container is running."
+fi
 
 echo "Target LXC  : ${LXC_ID}"
 echo "Llama port  : ${LLAMA_PORT}"
 echo "Model       : ${DEFAULT_MODEL_FILE}"
 echo "Backend     : Vulkan (RADV)"
 echo ""
+
+# ─── GPU Passthrough (Vulkan needs /dev/dri and /dev/kfd) ───────────────────────
+echo "[0/7] Configuring GPU passthrough for Vulkan..."
+pct config "${LXC_ID}" raw.lxc "lxc.cgroup2.devices.allow = c 226:0-255 rwm"
+pct config "${LXC_ID}" raw.lxc "lxc.mount.entry = /dev/dri/dev/dri"
+pct config "${LXC_ID}" raw.lxc "lxc.mount.entry = /dev/kfd/dev/kfd"
+echo "  GPU passthrough configured."
 
 # ─── 1. Install deps and Vulkan runtime ────────────────────────────────────────
 echo "[1/7] Installing base dependencies and Vulkan runtime..."
@@ -228,3 +248,7 @@ echo "  Dev (Vulkan) : http://192.168.1.12:80"
 echo "  Prod (ROCm)  : http://192.168.1.21:80"
 echo ""
 echo "  Watch logs: pct exec ${LXC_ID} -- journalctl -u ai-engine -f"
+echo ""
+echo "============================================"
+echo "  DONE! Pushing config changes to git..."
+echo "============================================"
