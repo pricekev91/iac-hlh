@@ -74,7 +74,8 @@ apt-get install -y --no-install-recommends \
   python3 python3-pip curl wget unzip \
   ca-certificates \
   libvulkan-dev vulkan-tools \
-  mesa-vulkan-drivers
+  mesa-vulkan-drivers \
+  glslang-tools spirv-tools
 
 # Add root to render and video groups for GPU access
 usermod -aG render root
