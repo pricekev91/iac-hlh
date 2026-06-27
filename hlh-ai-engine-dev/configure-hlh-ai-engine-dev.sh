@@ -82,15 +82,6 @@ apt-get install -y --no-install-recommends \
   mesa-vulkan-drivers \
   glslang-tools spirv-tools
 
-# LunarG Vulkan SDK (provides glslc — the shader compiler llama.cpp needs)
-curl -fsSL https://packages.lunarg.com/lunarg-signing-key-pub.asc \
-  | gpg --dearmor -o /usr/share/keyrings/lunarg-vulkan-archive-keyring.gpg
-echo 'deb [signed-by=/usr/share/keyrings/lunarg-vulkan-archive-keyring.gpg] \
-  https://packages.lunarg.com/vulkan stable main' \
-  > /etc/apt/sources.list.d/lunarg-vulkan-stable.list
-apt-get update
-apt-get install -y --no-install-recommends vulkan-sdk
-
 # Add root to render and video groups for GPU access
 usermod -aG render root
 usermod -aG video root
