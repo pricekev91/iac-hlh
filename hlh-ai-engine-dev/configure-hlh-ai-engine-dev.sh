@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
-# Updated configure script for Vulkan support on AMD HX 370 with 890M iGPU
+# configure-hlh-ai-engine-dev.sh
+# Version: 2.0.0
+# Description: Bootstrap llama.cpp AI engine on Ubuntu 24.04 LXC with Vulkan backend
+# Target: CT 121 — Vulkan benchmark of same model as CT 101 (PROD/ROCm)
+# Key difference from CT 101: Vulkan (RADV) instead of ROCm
+# All other params match CT 101 exactly for fair comparison
+#
+# Changelog:
+#   2.0.0 - Match CT 101 config: 96K ctx, MTP (draft-mtp, n-max=2),
+#           batch 512, flash-attn, port 80, Qwen3.6-35B-A3B-MTP-Q4_K_M
+#           Fixed: VK_ICD_FILENAMES (radeon_icd.json, not radeon_icd64.json)
+#           Removed invalid --backend vulkan flag
+#   1.1.0 - Fixed Vulkan ICD filenames (amd_icd64.json -> amd_icd.json)
+#   1.0.0 - Initial Vulkan config for CT 121
 
 set -euo pipefail
 
@@ -9,23 +22,23 @@ MODEL_DIR="/srv/ai/models"
 LLAMA_CPP_REPO="https://github.com/ggerganov/llama.cpp.git"
 LLAMA_CPP_DIR="/opt/llama.cpp"
 SERVICE_NAME="ai-engine"
-DEFAULT_MODEL_URL="https://huggingface.co/bartowski/Qwen2.5-Coder-32B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-DEFAULT_MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+DEFAULT_MODEL_FILE="Qwen3.6-35B-A3B-MTP-Q4_K_M.gguf"
+DEFAULT_MODEL_URL="https://huggingface.co/bartowski/Qwen3.6-35B-A3B-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-MTP-Q4_K_M.gguf"
 LLAMA_PORT=80
-DEFAULT_BACKEND="vulkan"
 
 # ─── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)
-            echo "Usage:"
-            echo "  ./configure-hlh-ai-engine-dev.sh"
+            echo "Usage: ./configure-hlh-ai-engine-dev.sh"
             echo ""
-            echo "Bootstraps Vulkan and llama.cpp (Vulkan build) inside a running privileged LXC on Proxmox."
+            echo "Bootstraps Vulkan and llama.cpp inside CT 121 on Proxmox."
+            echo "Configured to match CT 101 (PROD/ROCm) for benchmark parity."
             echo ""
-            echo "Target LXC : ${LXC_ID}"
-            echo "Llama port : ${LLAMA_PORT}"
-            echo "Default backend: ${DEFAULT_BACKEND}"
+            echo "Target LXC  : ${LXC_ID}"
+            echo "Llama port  : ${LLAMA_PORT}"
+            echo "Model       : ${DEFAULT_MODEL_FILE}"
+            echo "Backend     : Vulkan (RADV)"
             exit 0
             ;;
         *)
@@ -44,13 +57,14 @@ pct status "${LXC_ID}" >/dev/null 2>&1 || {
     exit 1
 }
 
-echo "Target LXC : ${LXC_ID}"
-echo "Llama port : ${LLAMA_PORT}"
-echo "Default backend: ${DEFAULT_BACKEND}"
+echo "Target LXC  : ${LXC_ID}"
+echo "Llama port  : ${LLAMA_PORT}"
+echo "Model       : ${DEFAULT_MODEL_FILE}"
+echo "Backend     : Vulkan (RADV)"
 echo ""
 
-# ─── 1. Install base deps and Vulkan ───────────────────────────────────────────
-echo "[1/8] Installing base dependencies and Vulkan runtime..."
+# ─── 1. Install deps and Vulkan runtime ────────────────────────────────────────
+echo "[1/7] Installing base dependencies and Vulkan runtime..."
 pct exec "${LXC_ID}" -- bash -c '
 set -euo pipefail
 
@@ -59,27 +73,28 @@ apt-get install -y --no-install-recommends \
   build-essential git cmake pkg-config \
   python3 python3-pip curl wget unzip \
   ca-certificates \
-  libvulkan-dev spirv-headers vulkan-tools glslc glslang-tools spirv-tools
+  libvulkan-dev vulkan-tools \
+  mesa-vulkan-drivers
 
-# Add root to render group for GPU access
+# Add root to render and video groups for GPU access
 usermod -aG render root
 usermod -aG video root
 
-# Vulkan environment
+# Vulkan environment — radeon_icd.json is the actual Mesa file (not radeon_icd64.json)
 tee /etc/profile.d/vulkan.env <<EOF
-export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/amd_icd64.json:/usr/share/vulkan/icd.d/radeon_icd64.json
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.json
 EOF
 
 source /etc/profile.d/vulkan.env
 
-# Verify Vulkan tools
-echo "Vulkan environment:"
-vulkaninfo --summary 2>/dev/null || echo "vulkaninfo not fully available (driver may load later)"
-glslc --version 2>/dev/null || echo "glslc not available"
+echo "Vulkan ICD files:"
+ls -la /usr/share/vulkan/icd.d/
+echo ""
+vulkaninfo --summary 2>/dev/null || echo "vulkaninfo: driver not ready yet"
 '
 
 # ─── 2. Clone llama.cpp ───────────────────────────────────────────────────────
-echo "[2/8] Cloning llama.cpp..."
+echo "[2/7] Cloning llama.cpp..."
 pct exec "${LXC_ID}" -- bash -c '
 set -euo pipefail
 LLAMA_CPP_REPO="https://github.com/ggerganov/llama.cpp.git"
@@ -93,7 +108,7 @@ fi
 '
 
 # ─── 3. Build Vulkan version ──────────────────────────────────────────────────
-echo "[3/8] Building llama.cpp (Vulkan)..."
+echo "[3/7] Building llama.cpp (Vulkan)..."
 pct exec "${LXC_ID}" -- bash -c '
 set -euo pipefail
 
@@ -113,86 +128,60 @@ cmake --build build_vulkan --config Release -j$(nproc)
 
 echo ""
 echo "Vulkan build: Verifying..."
-./build_vulkan/bin/llama-server --version || echo "Vulkan build failed"
+./build_vulkan/bin/llama-server --version 2>&1 || echo "Vulkan build failed"
 '
 
 # ─── 4. Create bin directory with symlink ──────────────────────────────────────
-echo "[4/8] Creating bin directory with backend symlink..."
+echo "[4/7] Creating bin directory with backend symlink..."
 pct exec "${LXC_ID}" -- bash -c '
 mkdir -p /opt/llama.cpp/bin
 ln -sf /opt/llama.cpp/build_vulkan/bin/llama-server /opt/llama.cpp/bin/vulkan
-
 echo "vulkan   -> $(readlink -f /opt/llama.cpp/bin/vulkan)"
 '
 
-# ─── 5. Set up models ─────────────────────────────────────────────────
-echo "[5/8] Setting up model directory..."
-pct exec "${LXC_ID}" -- bash -c '
-set -euo pipefail
-
-MODEL_DIR="/srv/ai/models"
-DEFAULT_MODEL_URL="https://huggingface.co/bartowski/Qwen2.5-Coder-32B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-DEFAULT_MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-
-mkdir -p "$MODEL_DIR"
-
-# Select model - prioritize specific model files
-ACTIVE_MODEL_FILE=""
-if [ -f "${MODEL_DIR}/${DEFAULT_MODEL_FILE}" ]; then
-  ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
-elif [ -f "${MODEL_DIR}/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf" ]; then
-  ACTIVE_MODEL_FILE="Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-elif [ -f "${MODEL_DIR}/Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf" ]; then
-  ACTIVE_MODEL_FILE="Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf"
-elif [ -f "${MODEL_DIR}/Qwen_Qwen3-Coder-Next-Q4_K_M.gguf" ]; then
-  ACTIVE_MODEL_FILE="Qwen_Qwen3-Coder-Next-Q4_K_M.gguf"
+# ─── 5. Verify model exists ──────────────────────────────────────────────────
+echo "[5/7] Checking model ${DEFAULT_MODEL_FILE}..."
+pct exec "${LXC_ID}" -- bash -c "
+if [ -f '${MODEL_DIR}/${DEFAULT_MODEL_FILE}' ]; then
+  echo '  [✓] Model present:'
+  ls -lh '${MODEL_DIR}/${DEFAULT_MODEL_FILE}'
 else
-  EXISTING=$(find "$MODEL_DIR" -maxdepth 1 -type f -name "*.gguf" | head -1)
-  if [ -n "$EXISTING" ]; then
-    ACTIVE_MODEL_FILE="$(basename "$EXISTING")"
-    echo "Using existing model: $ACTIVE_MODEL_FILE"
-  else
-    ACTIVE_MODEL_FILE="$DEFAULT_MODEL_FILE"
-    echo "Downloading default model: $ACTIVE_MODEL_FILE"
-    wget -O "${MODEL_DIR}/${ACTIVE_MODEL_FILE}" "$DEFAULT_MODEL_URL"
-  fi
+  echo '  [!] Model not found — downloading...'
+  mkdir -p ${MODEL_DIR}
+  cd ${MODEL_DIR}
+  wget --progress=bar:force:noscroll \
+       -O ${DEFAULT_MODEL_FILE} \
+       ${DEFAULT_MODEL_URL}
+  echo '  [✓] Download complete.'
 fi
+"
 
-cat > /etc/ai-engine.env <<EOF
-ACTIVE_MODEL=${ACTIVE_MODEL_FILE}
-DEFAULT_BACKEND=vulkan
-EOF
-'
-
-# ─── 6. Create systemd service ────────────────────────────────────────────────
-echo "[6/8] Creating systemd service..."
+# ─── 6. Create systemd service (matches CT 101 config) ────────────────────────
+echo "[6/7] Creating systemd service (matches CT 101 PROD config)..."
 pct exec "${LXC_ID}" -- bash -c '
-set -euo pipefail
-
-ACTIVE_MODEL=$(grep -oP "ACTIVE_MODEL=\K.*" /etc/ai-engine.env 2>/dev/null || echo "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf")
-DEFAULT_BACKEND=$(grep -oP "DEFAULT_BACKEND=\K.*" /etc/ai-engine.env 2>/dev/null || echo "vulkan")
-
-# For AMD GPU with 890M, use appropriate ngl parameter and backend
-tee /etc/systemd/system/ai-engine.service <<EOF
+cat > /etc/systemd/system/ai-engine.service <<EOF
 [Unit]
-Description=llama.cpp AI Engine - llama-server
+Description=llama.cpp AI Engine (llama-server) - Vulkan on port 80
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/ai/models
+WorkingDirectory=/opt/llama.cpp/build_vulkan
+Environment=VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.json
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/amd_icd64.json:/usr/share/vulkan/icd.d/radeon_icd64.json
-ExecStart=/opt/llama.cpp/bin/${DEFAULT_BACKEND} \
-  --model /srv/ai/models/${ACTIVE_MODEL} \
-  --host 0.0.0.0 --port 80 \
-  --ctx-size 65536 \
-  -ngl 48 \
-  --batch-size 128 \
-  --parallel 1 \
-  --cache-type-k q4_0 \
-  --cache-type-v q4_0 \
-  --backend vulkan
+Environment=LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
+ExecStart=/opt/llama.cpp/build_vulkan/bin/llama-server \\
+  --model /srv/ai/models/Qwen3.6-35B-A3B-MTP-Q4_K_M.gguf \\
+  --host 0.0.0.0 --port 80 \\
+  --ctx-size 98304 \\
+  -ngl 48 \\
+  --batch-size 512 \\
+  --flash-attn on \\
+  --parallel 1 \\
+  --cache-type-k q4_0 \\
+  --cache-type-v q4_0 \\
+  --spec-type draft-mtp \\
+  --spec-draft-n-max 2
 Restart=on-failure
 RestartSec=10
 User=root
@@ -200,42 +189,32 @@ User=root
 [Install]
 WantedBy=multi-user.target
 EOF
+
+echo "Service file created:"
+cat /etc/systemd/system/ai-engine.service
 '
 
 # ─── 7. Enable and start ──────────────────────────────────────────────────────
-echo "[7/8] Enabling and starting service..."
+echo "[7/7] Enabling and starting service..."
 pct exec "${LXC_ID}" -- systemctl daemon-reload
 pct exec "${LXC_ID}" -- systemctl enable --now ai-engine
-
-# ─── 8. Verify ─────────────────────────────────────────────────────────────────
-echo "[8/8] Verifying setup..."
-echo ""
-pct exec "${LXC_ID}" -- bash -c '
-echo "[backend symlinks]"
-ls -la /opt/llama.cpp/bin/
-
-echo ""
-echo "[vulkan binary check]"
-/opt/llama.cpp/bin/vulkan --version 2>/dev/null || echo "Vulkan binary not built"
-
-echo ""
-echo "[service status]"
-systemctl status ai-engine --no-pager 2>/dev/null || echo "Service not active"
-
-echo ""
-echo "[switch script]"
-ls -la /usr/local/bin/switch-backend.sh 2>/dev/null || echo "Switch script not installed (run deploy script)"
-'
+sleep 5
+pct exec "${LXC_ID}" -- systemctl status ai-engine --no-pager
 
 echo ""
 echo "============================================"
-echo "  Dev AI engine deployed (Vulkan only)!"
+echo "  Dev AI engine deployed (Vulkan)!"
 echo "============================================"
 echo ""
-echo "  Container  : LXC ${LXC_ID}"
-echo "  Model dir  : ${MODEL_DIR} (shared with prod)"
-echo "  llama-server: http://192.168.1.21:80"
-echo "  Backend bin  : /opt/llama.cpp/bin/vulkan"
-echo "  GPU        : gfx1150 (AMD Radeon 890M)"
+echo "  Container  : CT ${LXC_ID} (LXC ${LXC_ID})"
+echo "  Model      : ${DEFAULT_MODEL_FILE}"
+echo "  Backend    : Vulkan (RADV, Mesa)"
+echo "  ctx-size   : 98304 (96K) — matches CT 101"
+echo "  KV cache   : q4_0 K/V"
+echo "  MTP        : draft-mtp, n-max=2"
+echo "  Port       : ${LLAMA_PORT}"
 echo ""
-echo "  Compare with prod (ROCm): http://192.168.1.12:80"
+echo "  Dev (Vulkan) : http://192.168.1.12:80"
+echo "  Prod (ROCm)  : http://192.168.1.21:80"
+echo ""
+echo "  Watch logs: pct exec ${LXC_ID} -- journalctl -u ai-engine -f"
