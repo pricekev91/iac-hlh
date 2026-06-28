@@ -82,7 +82,7 @@ apt-get install -y --no-install-recommends \
   ca-certificates gnupg \
   libvulkan-dev vulkan-tools \
   mesa-vulkan-drivers \
-  glslang-tools
+  glslang-tools spirv-tools
 
 # Add root to render and video groups for GPU access
 usermod -aG render root
