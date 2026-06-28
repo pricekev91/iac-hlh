@@ -96,8 +96,24 @@ EOF
 
 source /etc/profile.d/vulkan.env
 
+# Install glslc (Ubuntu 24.04 glslang-tools doesn't include it)
+# Download pre-built binary from glslang GitHub releases
+if ! which glslc >/dev/null 2>&1; then
+  echo "Downloading glslc binary..."
+  GLSLC_URL="https://github.com/KhronosGroup/glslang/releases/download/v15.1.0/glslc-linux-x86-15.1.0.tar.gz"
+  cd /tmp
+  wget -q "${GLSLC_URL}" -O glslc.tar.gz || {
+    echo "ERROR: Failed to download glslc. Check network or URL."
+    exit 1
+  }
+  tar xzf glslc.tar.gz
+  mv glslc /usr/local/bin/
+  chmod +x /usr/local/bin/glslc
+  echo "  glslc installed at /usr/local/bin/glslc"
+fi
+
 # Verify glslc is available (required for Vulkan build)
-which glslc || { echo "ERROR: glslc not found after installing glslang-tools"; exit 1; }
+which glslc || { echo "ERROR: glslc not found"; exit 1; }
 
 
 echo "Vulkan ICD files:"
