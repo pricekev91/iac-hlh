@@ -97,19 +97,19 @@ EOF
 source /etc/profile.d/vulkan.env
 
 # Install glslc (Ubuntu 24.04 glslang-tools does not include it)
-# Download pre-built binary from glslang GitHub releases
+# Build glslc from source as it's not available in Ubuntu repos
 if ! which glslc >/dev/null 2>&1; then
-  echo "Downloading glslc binary..."
-  GLSLC_URL="https://github.com/KhronosGroup/glslang/releases/download/v15.1.0/glslc-linux-x86-15.1.0.tar.gz"
+  echo "Building glslc from source..."
   cd /tmp
-  wget -q "${GLSLC_URL}" -O glslc.tar.gz || {
-    echo "ERROR: Failed to download glslc. Check network or URL."
-    exit 1
-  }
-  tar xzf glslc.tar.gz
-  mv glslc /usr/local/bin/
+  git clone --depth=1 https://github.com/KhronosGroup/glslang.git glslang-build
+  cd glslang-build
+  mkdir build && cd build
+  cmake .. -DCMAKE_BUILD_TYPE=Release
+  make glslc -j$(nproc)
+  cp glslc /usr/local/bin/
   chmod +x /usr/local/bin/glslc
-  echo "  glslc installed at /usr/local/bin/glslc"
+  cd /tmp && rm -rf glslang-build
+  echo "  glslc built and installed at /usr/local/bin/glslc"
 fi
 
 # Verify glslc is available (required for Vulkan build)
