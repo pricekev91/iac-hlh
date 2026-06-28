@@ -104,7 +104,7 @@ if ! which glslc >/dev/null 2>&1; then
   git clone --depth=1 https://github.com/KhronosGroup/glslang.git glslang-build
   cd glslang-build
   mkdir build && cd build
-  cmake .. -DCMAKE_BUILD_TYPE=Release
+  cmake .. -DCMAKE_BUILD_TYPE=Release -DALLOW_EXTERNAL_SPIRV_TOOLS=ON
   make glslc -j$(nproc)
   cp glslc /usr/local/bin/
   chmod +x /usr/local/bin/glslc
