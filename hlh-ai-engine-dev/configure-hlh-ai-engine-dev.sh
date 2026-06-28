@@ -96,7 +96,7 @@ EOF
 
 source /etc/profile.d/vulkan.env
 
-# Install glslc (Ubuntu 24.04 glslang-tools doesn't include it)
+# Install glslc (Ubuntu 24.04 glslang-tools does not include it)
 # Download pre-built binary from glslang GitHub releases
 if ! which glslc >/dev/null 2>&1; then
   echo "Downloading glslc binary..."
