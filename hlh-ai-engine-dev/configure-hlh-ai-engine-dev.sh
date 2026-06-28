@@ -82,7 +82,8 @@ apt-get install -y --no-install-recommends \
   ca-certificates gnupg \
   libvulkan-dev vulkan-tools \
   mesa-vulkan-drivers \
-  glslang-tools
+  glslang-tools \
+  glslang-spirv-tools
 
 # Add root to render and video groups for GPU access
 usermod -aG render root
@@ -91,9 +92,14 @@ usermod -aG video root
 # Vulkan environment — radeon_icd.json is the actual Mesa file (not radeon_icd64.json)
 tee /etc/profile.d/vulkan.env <<EOF
 export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.json
+export PATH=$PATH:/usr/bin
 EOF
 
 source /etc/profile.d/vulkan.env
+
+# Verify glslc is available (required for Vulkan build)
+which glslc || { echo "ERROR: glslc not found after installing glslang-tools"; exit 1; }
+
 
 echo "Vulkan ICD files:"
 ls -la /usr/share/vulkan/icd.d/
