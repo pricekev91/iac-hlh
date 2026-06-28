@@ -89,9 +89,9 @@ usermod -aG render root
 usermod -aG video root
 
 # Vulkan environment — radeon_icd.json is the actual Mesa file (not radeon_icd64.json)
-tee /etc/profile.d/vulkan.env <<EOF
+tee /etc/profile.d/vulkan.env <<'EOF'
 export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.json
-export PATH=$PATH:/usr/bin
+export PATH=/usr/local/bin:$PATH:/usr/bin
 EOF
 
 source /etc/profile.d/vulkan.env
