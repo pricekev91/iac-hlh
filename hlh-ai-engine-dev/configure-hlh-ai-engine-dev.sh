@@ -10,6 +10,7 @@
 # Vulkan ICD files (radeon_icd.json) are installed by mesa-vulkan-drivers inside container
 #
 # Changelog:
+#   2.2.0 - Added glslang-tools to fix cmake glslc dependency for Vulkan backend
 #   2.1.1 - Fixed GGML_VULKAN_HOST=OFF to avoid glslc dependency (pre-compiled SPIR-V shaders)
 #   2.1.0 - Added container deployment and GPU passthrough
 #   2.0.0 - Match CT 101 config: 96K ctx, MTP (draft-mtp, n-max=2),
@@ -80,7 +81,8 @@ apt-get install -y --no-install-recommends \
   python3 python3-pip curl wget unzip \
   ca-certificates gnupg \
   libvulkan-dev vulkan-tools \
-  mesa-vulkan-drivers
+  mesa-vulkan-drivers \
+  glslang-tools
 
 # Add root to render and video groups for GPU access
 usermod -aG render root
