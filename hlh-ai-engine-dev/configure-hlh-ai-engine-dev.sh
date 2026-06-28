@@ -101,6 +101,7 @@ source /etc/profile.d/vulkan.env
 if ! which glslc >/dev/null 2>&1; then
   echo "Building glslc from source..."
   cd /tmp
+  rm -rf glslang-build
   git clone --depth=1 https://github.com/KhronosGroup/glslang.git glslang-build
   cd glslang-build
   mkdir build && cd build
